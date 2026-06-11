@@ -1,0 +1,286 @@
+{
+  "conditions": {
+    "clean": {
+      "averages": {
+        "fan": {
+          "knn": {
+            "auc": 0.7488888888888889,
+            "pauc": 0.5994152046783625
+          },
+          "mahalanobis": {
+            "auc": 0.7733333333333334,
+            "pauc": 0.6140350877192983
+          }
+        },
+        "pump": {
+          "knn": {
+            "auc": 0.8933333333333333,
+            "pauc": 0.7573099415204678
+          },
+          "mahalanobis": {
+            "auc": 0.9000000000000001,
+            "pauc": 0.7573099415204678
+          }
+        }
+      },
+      "clip_root": null,
+      "n_replaced": 0,
+      "n_test": 240,
+      "per_id": [
+        {
+          "auc": 0.5688888888888889,
+          "machine": "fan",
+          "machine_id": "id_00",
+          "pauc": 0.47368421052631576,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.5644444444444445,
+          "machine": "fan",
+          "machine_id": "id_00",
+          "pauc": 0.47368421052631576,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.7688888888888888,
+          "machine": "fan",
+          "machine_id": "id_02",
+          "pauc": 0.5087719298245614,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.8044444444444444,
+          "machine": "fan",
+          "machine_id": "id_02",
+          "pauc": 0.5087719298245614,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.7333333333333334,
+          "machine": "fan",
+          "machine_id": "id_04",
+          "pauc": 0.6491228070175439,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.7733333333333333,
+          "machine": "fan",
+          "machine_id": "id_04",
+          "pauc": 0.6491228070175439,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.9244444444444445,
+          "machine": "fan",
+          "machine_id": "id_06",
+          "pauc": 0.7660818713450293,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.9511111111111112,
+          "machine": "fan",
+          "machine_id": "id_06",
+          "pauc": 0.824561403508772,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 1.0,
+          "machine": "pump",
+          "machine_id": "id_00",
+          "pauc": 1.0,
+          "scorer": "knn"
+        },
+        {
+          "auc": 1.0,
+          "machine": "pump",
+          "machine_id": "id_00",
+          "pauc": 1.0,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 1.0,
+          "machine": "pump",
+          "machine_id": "id_02",
+          "pauc": 1.0,
+          "scorer": "knn"
+        },
+        {
+          "auc": 1.0,
+          "machine": "pump",
+          "machine_id": "id_02",
+          "pauc": 1.0,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.7777777777777778,
+          "machine": "pump",
+          "machine_id": "id_04",
+          "pauc": 0.5555555555555556,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.808888888888889,
+          "machine": "pump",
+          "machine_id": "id_04",
+          "pauc": 0.5555555555555556,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.7955555555555557,
+          "machine": "pump",
+          "machine_id": "id_06",
+          "pauc": 0.47368421052631576,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.7911111111111112,
+          "machine": "pump",
+          "machine_id": "id_06",
+          "pauc": 0.47368421052631576,
+          "scorer": "mahalanobis"
+        }
+      ]
+    },
+    "noisy_snr0": {
+      "averages": {
+        "fan": {
+          "knn": {
+            "auc": 0.8111111111111111,
+            "pauc": 0.6169590643274854
+          },
+          "mahalanobis": {
+            "auc": 0.83,
+            "pauc": 0.6345029239766081
+          }
+        },
+        "pump": {
+          "knn": {
+            "auc": 0.8788888888888888,
+            "pauc": 0.7631578947368421
+          },
+          "mahalanobis": {
+            "auc": 0.8888888888888888,
+            "pauc": 0.7690058479532164
+          }
+        }
+      },
+      "clip_root": "/tmp/noisy_tree/snr_0dB",
+      "n_replaced": 240,
+      "n_test": 240,
+      "per_id": [
+        {
+          "auc": 0.6844444444444444,
+          "machine": "fan",
+          "machine_id": "id_00",
+          "pauc": 0.47368421052631576,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.7022222222222222,
+          "machine": "fan",
+          "machine_id": "id_00",
+          "pauc": 0.47368421052631576,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.76,
+          "machine": "fan",
+          "machine_id": "id_02",
+          "pauc": 0.49707602339181284,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.8044444444444444,
+          "machine": "fan",
+          "machine_id": "id_02",
+          "pauc": 0.5087719298245614,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.8088888888888889,
+          "machine": "fan",
+          "machine_id": "id_04",
+          "pauc": 0.543859649122807,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.8222222222222222,
+          "machine": "fan",
+          "machine_id": "id_04",
+          "pauc": 0.5906432748538012,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.9911111111111112,
+          "machine": "fan",
+          "machine_id": "id_06",
+          "pauc": 0.9532163742690059,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.9911111111111112,
+          "machine": "fan",
+          "machine_id": "id_06",
+          "pauc": 0.9649122807017544,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 1.0,
+          "machine": "pump",
+          "machine_id": "id_00",
+          "pauc": 1.0,
+          "scorer": "knn"
+        },
+        {
+          "auc": 1.0,
+          "machine": "pump",
+          "machine_id": "id_00",
+          "pauc": 1.0,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.9911111111111112,
+          "machine": "pump",
+          "machine_id": "id_02",
+          "pauc": 0.9649122807017544,
+          "scorer": "knn"
+        },
+        {
+          "auc": 1.0,
+          "machine": "pump",
+          "machine_id": "id_02",
+          "pauc": 1.0,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.7022222222222222,
+          "machine": "pump",
+          "machine_id": "id_04",
+          "pauc": 0.5087719298245614,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.7377777777777778,
+          "machine": "pump",
+          "machine_id": "id_04",
+          "pauc": 0.5321637426900585,
+          "scorer": "mahalanobis"
+        },
+        {
+          "auc": 0.8222222222222222,
+          "machine": "pump",
+          "machine_id": "id_06",
+          "pauc": 0.5789473684210527,
+          "scorer": "knn"
+        },
+        {
+          "auc": 0.8177777777777777,
+          "machine": "pump",
+          "machine_id": "id_06",
+          "pauc": 0.543859649122807,
+          "scorer": "mahalanobis"
+        }
+      ]
+    }
+  }
+}
