@@ -75,6 +75,62 @@ uv run python -m engine.eval.run_eval --device cpu --check-determinism
 
 Computes PANNs embeddings (cached), fits a kNN and a Mahalanobis scorer **per machine id on normal clips only** (MIMII protocol), scores the held-out normal + abnormal test clips, and reports **AUC** and **pAUC** (DCASE2020 convention, `max_fpr=0.1`) per id and per machine type. It also trains the classifier and runs a determinism double-pass, then writes the full table to `engine/REPORT_BASELINE.md` with a sanity check against the published DCASE2020 baselines. Exit 0 = OK; **exit 2 = sanity SUSPECT** (report still written, but a type-average kNN AUC fell outside the plausible band — investigate before trusting).
 
+## Live streaming (Phase 1)
+
+The streaming stack scores 3 s windows hopped every 1 s against a per-machine
+baseline: PANNs embedding → kNN distance → EMA (α=0.3) → percentile vs the
+baseline's own calibration holdout → a conservative LISTENING → SUSPECT →
+ALERT policy (5 consecutive windows ≥ P99 to alert, P95 hysteresis exit,
+30 s cooldown). On SUSPECT/ALERT an evidence bundle explains why (deviating
+mel bands in Hz, envelope-spectrum peaks labeled line-hum / 1x-rotation /
+impulse-train, nearest baseline windows) plus a ≤60-char HUD line.
+
+All audio I/O flows through `shared.audio_source.AudioSource` (file, mic —
+glasses later). The machine-type CNN is **not** in the runtime path
+(`tests/test_runtime_imports.py` enforces this); it remains for offline eval.
+
+### Scoring service (FastAPI)
+
+```bash
+uv run uvicorn engine.serve:create_app --factory --port 8000
+```
+
+- `POST /session/start` `{mode: "session"|"saved"|"library", tag, rpm?}` —
+  session mode captures the first 30 s as the baseline; saved mode loads a
+  persisted baseline by tag; library mode is a documented stub (501).
+- `POST /score` `{session_id, pcm_b64}` (16 kHz mono int16 LE base64) →
+  `{state, score, percentile, evidence_line}`.
+- `POST /label` — writes WAV + sidecar JSON to `datakit/data/`.
+- `GET /health`.
+
+Baselines persist across restarts (`data/baselines/`); sessions do not.
+Backend/device via `EARSIGHT_BACKEND` (`torch`|`onnx`) and `EARSIGHT_DEVICE`.
+
+### Desktop demo (Streamlit)
+
+```bash
+uv run streamlit run desktop/app.py
+```
+
+Input-device picker, rolling 10 s spectrogram, capture-baseline (30 s) with
+countdown, state badge + percentile gauge, evidence panel, and a
+record-and-label form writing to `datakit/data/`. macOS prompts for mic
+permission on first use. The 60-second demo video script is in
+`desktop/DEMO.md`.
+
+### ONNX export
+
+```bash
+uv run python -m engine.export_onnx          # writes data/artifacts/cnn14_16k.onnx
+uv run python -m engine.export_onnx --bench  # prints torch + onnx real-time factors
+```
+
+Parity vs PyTorch: max |Δ| ≈ 2.1e-6 on 20 real clips (tolerance 1e-4).
+Measured real-time factor on this machine (CPU, 3 s window / 1 s hop):
+**RTF[onnx] ≈ 0.02, RTF[torch] ≈ 0.015** — ~25× under the 0.5 target, so the
+default 1 s hop is comfortable (a 2 s hop remains available via the
+`hop_s` parameter if ever needed on weaker hardware).
+
 ## Re-record kit (`killtest/`)
 
 The kill test's consumer-mic half. Three CLIs:
@@ -97,7 +153,13 @@ Physical protocol (your ~1 afternoon of hands-on work):
 - Record **one long WAV per mic chain** (Mac internal, phone, cheap MEMS/earbud, plus a good-mic control to separate speaker coloration from mic degradation).
 - Run `killtest.segment` to slice that recording back into aligned clips; use `killtest.noise` for synthetic SNR sweeps without re-recording.
 
-> The glue that re-runs the baseline eval directly on segmented clips is coming next.
+Re-run the identical eval on segmented or noise-overlaid clips (scorers stay
+fit on clean normals; results accumulate in `killtest/REPORT.md`):
+
+```bash
+uv run python -m killtest.eval_rerun --label rerecorded_macmic \
+  --clip-root killtest_out/segmented --device cpu
+```
 
 ## Run tests
 
@@ -109,17 +171,28 @@ uv run pytest
 
 ```
 earsight/
+  shared/audio_source.py   # AudioSource seam: FileSource, MicSource (glasses later)
   engine/
     download.py            # MIMII download (full + subset modes)
     audio.py               # WAV I/O (channel-0, 16 kHz)
     features/              # logmel + PANNs extraction, disk cache
     models/                # MachineTypeCNN, PANNs Cnn14
+    embedder.py            # torch | onnx embedding backends
+    stream.py              # 3 s / 1 s streaming scorer with EMA
+    baseline.py            # session/saved baselines, percentile calibration
+    policy.py              # LISTENING -> SUSPECT -> ALERT state machine
+    evidence.py            # mel-band + envelope-spectrum explanations
+    export_onnx.py         # ONNX export + RTF benchmark
+    serve.py               # FastAPI scoring service
+    labeling.py            # labeled-clip writer (datakit/data/)
     eval/run_eval.py       # AUC/pAUC anomaly eval + report
-    train_classifier.py    # machine-type CNN (id-disjoint split)
+    train_classifier.py    # machine-type CNN (offline only, not in runtime)
     smoke.py               # one-command end-to-end smoke test
     REPORT_BASELINE.md     # generated eval report
-  killtest/                # playlist / segment / noise CLIs
-  tests/                   # pytest suite
+  desktop/                 # Streamlit live demo app + DEMO.md video script
+  killtest/                # playlist / segment / noise / eval_rerun CLIs
+  datakit/data/            # labeled field clips (WAV + JSON sidecars)
+  tests/                   # pytest suite (one CI command: uv run pytest)
   data/                    # mimii, checkpoints, cache, artifacts (gitignored)
 ```
 

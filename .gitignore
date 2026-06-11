@@ -9,3 +9,6 @@ __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
+.DS_Store
+datakit/data/*
+!datakit/data/.gitkeep
