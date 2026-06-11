@@ -311,3 +311,27 @@ def test_evidence_line_surfaced_on_suspect(tmp_path, monkeypatch):
     assert seen is not None
     assert seen["state"] in {"SUSPECT", "ALERT"}
     assert seen["evidence_line"] == "test line"
+
+
+def test_cors_allows_webview_origins(tmp_path):
+    """Browser shells (Even Hub WebView) call cross-origin; CORS must answer."""
+    from fastapi.testclient import TestClient
+
+    from engine.serve import create_app
+
+    client = TestClient(create_app(embedder=object(), baseline_root=tmp_path))
+
+    r = client.get("/health", headers={"Origin": "http://localhost:5173"})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "*"
+
+    preflight = client.options(
+        "/score",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert preflight.status_code == 200
+    assert "POST" in preflight.headers.get("access-control-allow-methods", "")

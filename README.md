@@ -75,6 +75,8 @@ uv run python -m engine.eval.run_eval --device cpu --check-determinism
 
 Computes PANNs embeddings (cached), fits a kNN and a Mahalanobis scorer **per machine id on normal clips only** (MIMII protocol), scores the held-out normal + abnormal test clips, and reports **AUC** and **pAUC** (DCASE2020 convention, `max_fpr=0.1`) per id and per machine type. It also trains the classifier and runs a determinism double-pass, then writes the full table to `engine/REPORT_BASELINE.md` with a sanity check against the published DCASE2020 baselines. Exit 0 = OK; **exit 2 = sanity SUSPECT** (report still written, but a type-average kNN AUC fell outside the plausible band — investigate before trusting).
 
+> **Full-dataset results** (all 9,755 0 dB fan+pump clips, run on CUDA): fan kNN AUC **0.693**, pump **0.880** — both above the DCASE2020 AE baselines (0.658 / 0.729), determinism PASS. Snapshot in `engine/REPORT_FULL.md`. Note: with the full dataset on disk, the smoke test's eval stage exceeds its 10-minute CPU budget — the smoke budget is specified for the dev subset.
+
 ## Live streaming (Phase 1)
 
 The streaming stack scores 3 s windows hopped every 1 s against a per-machine
@@ -159,6 +161,21 @@ fit on clean normals; results accumulate in `killtest/REPORT.md`):
 ```bash
 uv run python -m killtest.eval_rerun --label rerecorded_macmic \
   --clip-root killtest_out/segmented --device cpu
+```
+
+## Glasses app (Even Hub)
+
+The first glasses shell lives in [`apps/evenhub/`](apps/evenhub/README.md) — an
+Even Hub WebView app (official asr template lineage) that streams glasses-mic
+PCM to the FastAPI service and renders the two-line HUD contract (≤1 push per
+2 s). Shared lens formatting + the typed engine client live in
+`shared/display-card/` (TypeScript) so the upcoming MentraOS shell cannot
+drift. See the app README for the dev loop, simulator, packaging, mock mode,
+and the hardware-unknowns test plan.
+
+```bash
+cd shared/display-card && npm install && npm test   # HUD contract suite
+cd apps/evenhub && npm install && npm test          # app + integration suite
 ```
 
 ## Run tests
