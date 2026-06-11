@@ -25,6 +25,7 @@ from uuid import uuid4
 
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from engine.baseline import BaselineManager
@@ -125,6 +126,16 @@ def create_app(
     is constructed lazily on first use from ``EARSIGHT_BACKEND``/``EARSIGHT_DEVICE``.
     """
     app = FastAPI(title="earsight scoring service")
+    # Browser-based shells (Even Hub WebView, desktop dev servers) call from a
+    # different origin. Default is permissive for local dev; pin origins in
+    # production via EARSIGHT_CORS_ORIGINS (comma-separated).
+    origins = os.environ.get("EARSIGHT_CORS_ORIGINS", "*")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in origins.split(",")],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.state.sessions = {}
     app.state.manager = BaselineManager(root=baseline_root)
     app.state.label_dir = label_dir

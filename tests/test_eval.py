@@ -191,7 +191,7 @@ def test_render_report_contains_tables_and_type_average():
     # Sanity table.
     assert "## Sanity check vs published baselines" in report
     assert "DCASE2020 Task2 baseline" in report
-    assert "this run (kNN, subset)" in report
+    assert "this run (kNN)" in report
     # Classifier section.
     assert "## Machine-type classifier" in report
     # Determinism section.

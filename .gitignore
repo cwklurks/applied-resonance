@@ -12,3 +12,10 @@ __pycache__/
 .DS_Store
 datakit/data/*
 !datakit/data/.gitkeep
+
+node_modules/
+apps/evenhub/dist/
+shared/display-card/dist/
+*.ehpk
+killtest_out/
+.env.local

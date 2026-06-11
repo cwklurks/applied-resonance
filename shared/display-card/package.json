@@ -1,0 +1,28 @@
+{
+  "name": "@earsight/display-card",
+  "version": "0.1.0",
+  "description": "Single source of truth for the Earsight glasses HUD: formatting, throttling, and the engine HTTP client.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
