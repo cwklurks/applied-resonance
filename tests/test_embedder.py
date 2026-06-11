@@ -16,9 +16,10 @@ def test_get_embedder_rejects_bogus_backend():
         get_embedder("bogus")
 
 
-def test_get_embedder_onnx_raises_runtime_error_naming_module():
-    with pytest.raises(RuntimeError, match="engine.onnx_embedder"):
-        get_embedder("onnx")
+def test_get_embedder_onnx_returns_onnx_backend():
+    from engine.onnx_embedder import OnnxPannsEmbedder
+
+    assert isinstance(get_embedder("onnx"), OnnxPannsEmbedder)
 
 
 # ----------------------------------------------------- TorchPannsEmbedder ----
