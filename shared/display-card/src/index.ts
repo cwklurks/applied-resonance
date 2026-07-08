@@ -26,5 +26,8 @@ export {
   type ScoreResponse,
   type LabelRequest,
   type LabelResponse,
+  type CaptureStartResponse,
+  type CaptureAppendResponse,
+  type CaptureStopResponse,
   type HealthResponse,
 } from "./client.js";

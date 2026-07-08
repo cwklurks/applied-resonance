@@ -21,7 +21,17 @@ import { EngineClient, formatHudCard } from '@earsight/display-card'
 import { Pipeline } from './pipeline'
 import { BridgeAudioFeed, BridgeDisplay, HUD_CONTAINER_ID } from './bridge_adapters'
 import { runMockFromWav } from './mock'
-import { mountUi, setBadge, setCard, setEvidence, pushLog, readSettings } from './ui'
+import {
+  bindCaptureControls,
+  mountUi,
+  setBadge,
+  setCaptureResult,
+  setCaptureStatus,
+  setCard,
+  setEvidence,
+  pushLog,
+  readSettings,
+} from './ui'
 
 /** Lift the evidence text (everything before ` · tap to log`) for the panel. */
 function evidenceFrom(line1: string, line2: string): string | null {
@@ -132,6 +142,32 @@ async function runBridgeMode(baseUrl: string): Promise<void> {
       setBadge(s)
       pushLog(`state: ${s}`)
     },
+    onCaptureEvent: (event) => {
+      switch (event.kind) {
+        case 'started':
+          setCaptureStatus(true, 0)
+          pushLog(`raw capture started: ${event.captureId}`)
+          break
+        case 'append':
+          setCaptureStatus(true, event.secondsTotal)
+          break
+        case 'stopped':
+          setCaptureStatus(false, event.durationS)
+          setCaptureResult(event.wavPath, event.durationS)
+          pushLog(`raw capture stopped: ${event.wavPath}`)
+          break
+        case 'warning':
+          setCaptureStatus(pipeline.capturing, pipeline.captureSeconds())
+          pushLog(event.message)
+          break
+      }
+    },
+  })
+  bindCaptureControls({
+    start: (tag) => pipeline.startCapture(tag),
+    stop: () => pipeline.stopCapture(),
+    capturing: () => pipeline.capturing,
+    seconds: () => pipeline.captureSeconds(),
   })
 
   let cleanedUp = false

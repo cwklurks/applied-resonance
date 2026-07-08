@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from engine.baseline import BaselineManager
+from engine.capture import CaptureStore
 from engine.embedder import get_embedder
 from engine.labeling import write_labeled_clip
 from engine.paths import REPO_ROOT
@@ -66,10 +67,28 @@ class LabelRequest(BaseModel):
     session_id: str | None = None
     pcm_b64: str
     machine_type: str
+    condition: str = ""
     suspected_fault: str = ""
     contains_speech: bool = False
     note: str = ""
     site_tag: str = ""
+    client_recorded_at: str | None = None
+    client_duration_s: float | None = None
+    client_peak_abs: float | None = None
+    client_clipped: bool | None = None
+
+
+class CaptureStartRequest(BaseModel):
+    tag: str
+
+
+class CaptureAppendRequest(BaseModel):
+    capture_id: str
+    pcm_b64: str
+
+
+class CaptureStopRequest(BaseModel):
+    capture_id: str
 
 
 # -------------------------------------------------------------- session ----
@@ -92,6 +111,13 @@ class Session:
 
 def _decode_pcm(pcm_b64: str) -> np.ndarray:
     """base64 -> int16 LE -> float32 in [-1, 1). 400 on bad input."""
+    raw = _decode_pcm_bytes(pcm_b64)
+    arr = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+    return arr
+
+
+def _decode_pcm_bytes(pcm_b64: str) -> bytes:
+    """base64 -> raw int16 LE bytes. 400 on bad input."""
     try:
         raw = base64.b64decode(pcm_b64, validate=True)
     except (binascii.Error, ValueError) as exc:
@@ -100,8 +126,7 @@ def _decode_pcm(pcm_b64: str) -> np.ndarray:
         raise HTTPException(
             status_code=400, detail="pcm byte count must be even (int16 LE)"
         )
-    arr = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
-    return arr
+    return raw
 
 
 def _slice_windows(audio: np.ndarray) -> list[np.ndarray]:
@@ -121,6 +146,7 @@ def create_app(
     embedder=None,
     baseline_root: Path | None = None,
     label_dir: Path | None = None,
+    capture_root: Path | None = None,
 ) -> FastAPI:
     """Build the scoring app. ``embedder`` may be injected (tests); otherwise it
     is constructed lazily on first use from ``EARSIGHT_BACKEND``/``EARSIGHT_DEVICE``.
@@ -139,6 +165,7 @@ def create_app(
     app.state.sessions = {}
     app.state.manager = BaselineManager(root=baseline_root)
     app.state.label_dir = label_dir
+    app.state.captures = CaptureStore(root=capture_root)
     app.state._embedder = embedder
 
     def get_embedder_dep(request: Request):
@@ -229,13 +256,25 @@ def create_app(
     def label(req: LabelRequest, request: Request):
         state = request.app.state
         audio = _decode_pcm(req.pcm_b64)
+        duration_s = float(audio.shape[0] / LABEL_SR)
+        peak_abs = float(np.max(np.abs(audio))) if audio.size else 0.0
+        clipped = bool(peak_abs >= 0.999 or req.client_clipped is True)
         meta = {
             "machine_type": req.machine_type,
+            "condition": req.condition,
             "suspected_fault": req.suspected_fault,
             "contains_speech": req.contains_speech,
             "note": req.note,
             "site_tag": req.site_tag,
             "session_id": req.session_id,
+            "duration_s": duration_s,
+            "peak_abs": peak_abs,
+            "clipped": clipped,
+            "client_recorded_at": req.client_recorded_at,
+            "client_duration_s": req.client_duration_s,
+            "client_peak_abs": req.client_peak_abs,
+            "client_clipped": req.client_clipped,
+            "public_dataset_default_excluded": bool(req.contains_speech),
         }
         wav_path, json_path = write_labeled_clip(
             audio, LABEL_SR, meta, out_dir=state.label_dir
@@ -244,6 +283,35 @@ def create_app(
             "wav_path": _repo_relative(wav_path),
             "json_path": _repo_relative(json_path),
         }
+
+    # ----------------------------------------------------------- capture ----
+
+    @app.post("/capture/start")
+    def capture_start(req: CaptureStartRequest, request: Request):
+        capture_id = request.app.state.captures.start(req.tag)
+        return {"capture_id": capture_id}
+
+    @app.post("/capture/append")
+    def capture_append(req: CaptureAppendRequest, request: Request):
+        pcm = _decode_pcm_bytes(req.pcm_b64)
+        try:
+            bytes_total = request.app.state.captures.append(req.capture_id, pcm)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="unknown capture_id") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "bytes_total": bytes_total,
+            "seconds_total": bytes_total / 2 / LABEL_SR,
+        }
+
+    @app.post("/capture/stop")
+    def capture_stop(req: CaptureStopRequest, request: Request):
+        try:
+            wav_path, duration_s = request.app.state.captures.stop(req.capture_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="unknown capture_id") from exc
+        return {"wav_path": _repo_relative(wav_path), "duration_s": duration_s}
 
     return app
 

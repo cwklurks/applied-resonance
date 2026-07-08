@@ -8,6 +8,9 @@ import type {
   StartResponse,
   LabelResponse,
   HealthResponse,
+  CaptureStartResponse,
+  CaptureAppendResponse,
+  CaptureStopResponse,
   StartRequest,
   LabelRequest,
 } from '@earsight/display-card'
@@ -43,6 +46,11 @@ class RecordingDisplay implements DisplayPort {
 }
 
 type ScoreResult = EngineResult<ScoreResponse>
+type CaptureAppendCall = { captureId: string; pcm: Uint8Array }
+type CaptureAppendImpl = (
+  captureId: string,
+  pcm: Uint8Array,
+) => Promise<EngineResult<CaptureAppendResponse>>
 
 /**
  * Scripted EngineClient: `startSession` returns a queue of start results (or a
@@ -54,11 +62,20 @@ class FakeEngineClient {
   scoreScript: ScoreResult[] = []
   labelCalls: (LabelRequest & { pcm: Uint8Array })[] = []
   startCalls: StartRequest[] = []
+  captureStartQueue: EngineResult<CaptureStartResponse>[] = []
+  captureAppendResults: EngineResult<CaptureAppendResponse>[] = []
+  captureStopQueue: EngineResult<CaptureStopResponse>[] = []
+  captureStartCalls: string[] = []
+  captureAppendCalls: CaptureAppendCall[] = []
+  captureStopCalls: string[] = []
+  captureAppendImpl: CaptureAppendImpl | null = null
   healthResult: EngineResult<HealthResponse> = {
     kind: 'ok',
     value: { status: 'ok', backend: 'cpu', baselines: [], sessions: 0 },
   }
   private startCount = 0
+  private captureStartCount = 0
+  private captureBytes = 0
 
   async startSession(req: StartRequest): Promise<EngineResult<StartResponse>> {
     this.startCalls.push(req)
@@ -80,6 +97,44 @@ class FakeEngineClient {
   async label(req: LabelRequest & { pcm: Uint8Array }): Promise<EngineResult<LabelResponse>> {
     this.labelCalls.push(req)
     return { kind: 'ok', value: { wav_path: 'datakit/data/x.wav', json_path: 'datakit/data/x.json' } }
+  }
+
+  async captureStart(tag: string): Promise<EngineResult<CaptureStartResponse>> {
+    this.captureStartCalls.push(tag)
+    const queued = this.captureStartQueue[this.captureStartCount]
+    this.captureStartCount += 1
+    return queued ?? { kind: 'ok', value: { capture_id: `cap-${this.captureStartCount}` } }
+  }
+
+  async captureAppend(
+    captureId: string,
+    pcm: Uint8Array,
+  ): Promise<EngineResult<CaptureAppendResponse>> {
+    if (this.captureAppendImpl) return this.captureAppendImpl(captureId, pcm)
+
+    this.captureAppendCalls.push({ captureId, pcm: new Uint8Array(pcm) })
+    this.captureBytes += pcm.length
+    const next = this.captureAppendResults.shift()
+    return (
+      next ?? {
+        kind: 'ok',
+        value: {
+          bytes_total: this.captureBytes,
+          seconds_total: this.captureBytes / FRAME_BYTES,
+        },
+      }
+    )
+  }
+
+  async captureStop(captureId: string): Promise<EngineResult<CaptureStopResponse>> {
+    this.captureStopCalls.push(captureId)
+    const next = this.captureStopQueue.shift()
+    return (
+      next ?? {
+        kind: 'ok',
+        value: { wav_path: `captures/${captureId}.wav`, duration_s: this.captureBytes / FRAME_BYTES },
+      }
+    )
   }
 
   async health(): Promise<EngineResult<HealthResponse>> {
@@ -141,6 +196,18 @@ async function prime(feed: ManualFeed, pipeline: Pipeline): Promise<void> {
 async function step(feed: ManualFeed, pipeline: Pipeline, fill = 1): Promise<void> {
   feed.emit(frame(fill))
   await pipeline.drain()
+}
+
+async function settleAsyncWork(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -335,5 +402,187 @@ describe('Pipeline', () => {
     // The throttle permits only the first render within the 2 s window.
     const renderedDuringWindow = display.cards.length - before
     expect(renderedDuringWindow).toBeLessThanOrEqual(1)
+  })
+
+  it('startCapture stores the engine capture id', async () => {
+    const clock = new FakeClock()
+    const fake = new FakeEngineClient()
+    const feed = new ManualFeed()
+    const display = new RecordingDisplay()
+    const events: string[] = []
+    const pipeline = new Pipeline(feed, {
+      client: asClient(fake),
+      display,
+      mode: 'session',
+      tag: 't',
+      now: clock.now,
+      onCaptureEvent: (event) => events.push(event.kind),
+    })
+
+    const id = await pipeline.startCapture('g2-characterization')
+
+    expect(id).toBe('cap-1')
+    expect(pipeline.capturing).toBe(true)
+    expect(pipeline.captureSeconds()).toBe(0)
+    expect(fake.captureStartCalls).toEqual(['g2-characterization'])
+    expect(events).toEqual(['started'])
+  })
+
+  it('tees exact frames while scoring CAPTURING_BASELINE and LISTENING states', async () => {
+    const clock = new FakeClock()
+    const fake = new FakeEngineClient()
+    fake.startQueue = [{ kind: 'ok', value: { session_id: 's1', state: 'LISTENING' } }]
+    const feed = new ManualFeed()
+    const display = new RecordingDisplay()
+    const pipeline = new Pipeline(feed, { client: asClient(fake), display, mode: 'session', tag: 't', now: clock.now })
+
+    await pipeline.start()
+    await prime(feed, pipeline)
+    await pipeline.startCapture('g2-characterization')
+
+    fake.scoreScript = [
+      { kind: 'ok', value: capturing(9) },
+      { kind: 'ok', value: listening() },
+    ]
+    await step(feed, pipeline, 7)
+    await step(feed, pipeline, 8)
+    const stopped = await pipeline.stopCapture()
+
+    expect(stopped).toEqual({ wavPath: 'captures/cap-1.wav', durationS: 2 })
+    expect(fake.captureAppendCalls.map((c) => c.captureId)).toEqual(['cap-1', 'cap-1'])
+    expect(fake.captureAppendCalls[0].pcm).toEqual(frame(7))
+    expect(fake.captureAppendCalls[1].pcm).toEqual(frame(8))
+  })
+
+  it('serializes capture appends without blocking scoring', async () => {
+    const clock = new FakeClock()
+    const fake = new FakeEngineClient()
+    const first = deferred()
+    const second = deferred()
+    const gates = [first, second]
+    fake.captureAppendImpl = async (captureId, pcm) => {
+      const index = fake.captureAppendCalls.length
+      fake.captureAppendCalls.push({ captureId, pcm: new Uint8Array(pcm) })
+      await gates[index].promise
+      return {
+        kind: 'ok',
+        value: { bytes_total: (index + 1) * FRAME_BYTES, seconds_total: index + 1 },
+      }
+    }
+    fake.startQueue = [{ kind: 'ok', value: { session_id: 's1', state: 'LISTENING' } }]
+    const feed = new ManualFeed()
+    const display = new RecordingDisplay()
+    const pipeline = new Pipeline(feed, { client: asClient(fake), display, mode: 'session', tag: 't', now: clock.now })
+
+    await pipeline.start()
+    await prime(feed, pipeline)
+    await pipeline.startCapture('g2-characterization')
+
+    fake.scoreScript = [{ kind: 'ok', value: alert(92, 'append held') }]
+    clock.advance(2001)
+    await step(feed, pipeline, 3)
+    expect(display.last!.line1.startsWith('!')).toBe(true)
+    expect(fake.captureAppendCalls.length).toBe(1)
+
+    fake.scoreScript = [{ kind: 'ok', value: listening() }]
+    await step(feed, pipeline, 4)
+    await settleAsyncWork()
+    expect(fake.captureAppendCalls.length).toBe(1)
+
+    first.resolve()
+    await settleAsyncWork()
+    expect(fake.captureAppendCalls.length).toBe(2)
+    expect(fake.captureAppendCalls.map((c) => c.pcm[0])).toEqual([3, 4])
+
+    second.resolve()
+    const stopped = await pipeline.stopCapture()
+    expect(stopped).toEqual({ wavPath: 'captures/cap-1.wav', durationS: 0 })
+  })
+
+  it('stopCapture returns the wav path and halts future appends', async () => {
+    const clock = new FakeClock()
+    const fake = new FakeEngineClient()
+    const feed = new ManualFeed()
+    const display = new RecordingDisplay()
+    const pipeline = new Pipeline(feed, { client: asClient(fake), display, mode: 'session', tag: 't', now: clock.now })
+
+    await pipeline.start()
+    await prime(feed, pipeline)
+    await pipeline.startCapture('g2-characterization')
+    await step(feed, pipeline, 5)
+
+    const stopped = await pipeline.stopCapture()
+    expect(stopped).toEqual({ wavPath: 'captures/cap-1.wav', durationS: 1 })
+    expect(pipeline.capturing).toBe(false)
+
+    await step(feed, pipeline, 6)
+    expect(fake.captureAppendCalls.length).toBe(1)
+    expect(fake.captureStopCalls).toEqual(['cap-1'])
+  })
+
+  it('append failure warns once and stops teeing', async () => {
+    const clock = new FakeClock()
+    const fake = new FakeEngineClient()
+    fake.captureAppendResults = [
+      { kind: 'http_error', status: 404, detail: 'unknown capture_id' },
+      { kind: 'ok', value: { bytes_total: FRAME_BYTES, seconds_total: 1 } },
+    ]
+    const warnings: string[] = []
+    const feed = new ManualFeed()
+    const display = new RecordingDisplay()
+    const pipeline = new Pipeline(feed, {
+      client: asClient(fake),
+      display,
+      mode: 'session',
+      tag: 't',
+      now: clock.now,
+      onCaptureEvent: (event) => {
+        if (event.kind === 'warning') warnings.push(event.message)
+      },
+    })
+
+    await pipeline.start()
+    await prime(feed, pipeline)
+    await pipeline.startCapture('g2-characterization')
+    await step(feed, pipeline, 9)
+    await settleAsyncWork()
+    expect(pipeline.capturing).toBe(false)
+
+    await step(feed, pipeline, 10)
+    await settleAsyncWork()
+
+    expect(fake.captureAppendCalls.length).toBe(1)
+    expect(warnings).toEqual(['raw capture append failed: 404 unknown capture_id'])
+  })
+
+  it('keeps scoring flow unaffected while raw capture is active', async () => {
+    const clock = new FakeClock()
+    const fake = new FakeEngineClient()
+    const heldAppend = deferred()
+    fake.captureAppendImpl = async (captureId, pcm) => {
+      fake.captureAppendCalls.push({ captureId, pcm: new Uint8Array(pcm) })
+      await heldAppend.promise
+      return { kind: 'ok', value: { bytes_total: FRAME_BYTES, seconds_total: 1 } }
+    }
+    fake.startQueue = [{ kind: 'ok', value: { session_id: 's1', state: 'LISTENING' } }]
+    const feed = new ManualFeed()
+    const display = new RecordingDisplay()
+    const pipeline = new Pipeline(feed, { client: asClient(fake), display, mode: 'session', tag: 't', now: clock.now })
+
+    await pipeline.start()
+    await prime(feed, pipeline)
+    await pipeline.startCapture('g2-characterization')
+
+    fake.scoreScript = [{ kind: 'ok', value: alert(99, 'scoring continues') }]
+    clock.advance(2001)
+    await step(feed, pipeline, 11)
+
+    expect(fake.captureAppendCalls.length).toBe(1)
+    expect(display.last!.line1.startsWith('!')).toBe(true)
+    expect(display.last!.line2).toContain('scoring continues')
+
+    heldAppend.resolve()
+    const stopped = await pipeline.stopCapture()
+    expect(stopped).toEqual({ wavPath: 'captures/cap-1.wav', durationS: 0 })
   })
 })
