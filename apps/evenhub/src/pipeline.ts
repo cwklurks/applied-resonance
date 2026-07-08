@@ -17,6 +17,7 @@ import {
   EngineClient,
   formatHudCard,
   HudThrottle,
+  type EngineResult,
   type HudCard,
   type HudInput,
   type HudState,
@@ -34,6 +35,12 @@ export interface DisplayPort {
   render(card: HudCard): void
 }
 
+export type CaptureEvent =
+  | { kind: 'started'; captureId: string }
+  | { kind: 'append'; captureId: string; bytesTotal: number; secondsTotal: number }
+  | { kind: 'stopped'; wavPath: string; durationS: number }
+  | { kind: 'warning'; message: string }
+
 export interface PipelineOpts {
   client: EngineClient
   display: DisplayPort
@@ -43,6 +50,8 @@ export interface PipelineOpts {
   now?: () => number
   /** Mirror state transitions to a companion UI (e.g. the phone WebView). */
   onStateChange?: (state: string) => void
+  /** Companion UI/raw-capture status events. */
+  onCaptureEvent?: (event: CaptureEvent) => void
   /**
    * Fires once per 1 s frame after its scoring settles. Mock/accelerated runs
    * use this to advance a virtual clock so the 2 s HUD throttle behaves as it
@@ -82,6 +91,7 @@ export class Pipeline {
   private readonly rpm: number | null
   private readonly now: () => number
   private readonly onStateChange?: (state: string) => void
+  private readonly onCaptureEvent?: (event: CaptureEvent) => void
   private readonly onFrameScored?: () => void
   private readonly ringFrames: number
 
@@ -101,6 +111,13 @@ export class Pipeline {
   private scoreChain: Promise<void> = Promise.resolve()
   private queuedFrames = 0
 
+  /** Raw-capture appends are serialized separately so scoring never waits. */
+  private captureAppendChain: Promise<void> = Promise.resolve()
+  private captureId: string | null = null
+  private stoppingCaptureId: string | null = null
+  private captureSecondsTotal = 0
+  private captureAppendFailed = false
+
   /** Rolling ring of the most recent finished 1 s frames (for tap-to-log). */
   private ring: Uint8Array[] = []
 
@@ -118,6 +135,7 @@ export class Pipeline {
     this.rpm = opts.rpm ?? null
     this.now = opts.now ?? (() => Date.now())
     this.onStateChange = opts.onStateChange
+    this.onCaptureEvent = opts.onCaptureEvent
     this.onFrameScored = opts.onFrameScored
     this.ringFrames = Math.max(1, opts.ringSeconds ?? DEFAULT_RING_SECONDS)
 
@@ -184,6 +202,73 @@ export class Pipeline {
   async drain(): Promise<void> {
     while (this.queuedFrames > 0) {
       await this.scoreChain
+    }
+  }
+
+  get capturing(): boolean {
+    return this.captureId !== null
+  }
+
+  captureSeconds(): number {
+    return this.captureSecondsTotal
+  }
+
+  async startCapture(tag: string): Promise<string | null> {
+    if (this.captureId !== null) return this.captureId
+    if (this.stoppingCaptureId !== null) {
+      this.emitCaptureWarning('raw capture stop is still finishing')
+      return null
+    }
+
+    let res
+    try {
+      res = await this.client.captureStart(tag)
+    } catch (err) {
+      console.error('captureStart: unexpected throw', err)
+      this.emitCaptureWarning('raw capture start failed: engine offline')
+      return null
+    }
+
+    if (res.kind !== 'ok') {
+      this.emitCaptureWarning(`raw capture start failed: ${describeEngineFailure(res)}`)
+      return null
+    }
+
+    this.captureId = res.value.capture_id
+    this.captureSecondsTotal = 0
+    this.captureAppendFailed = false
+    this.onCaptureEvent?.({ kind: 'started', captureId: res.value.capture_id })
+    return res.value.capture_id
+  }
+
+  async stopCapture(): Promise<{ wavPath: string; durationS: number } | null> {
+    const id = this.captureId
+    if (id === null) return null
+
+    this.captureId = null
+    this.stoppingCaptureId = id
+    try {
+      await this.captureAppendChain
+
+      const res = await this.client.captureStop(id)
+      if (res.kind !== 'ok') {
+        this.emitCaptureWarning(`raw capture stop failed: ${describeEngineFailure(res)}`)
+        return null
+      }
+
+      const stopped = {
+        wavPath: res.value.wav_path,
+        durationS: res.value.duration_s,
+      }
+      this.captureSecondsTotal = stopped.durationS
+      this.onCaptureEvent?.({ kind: 'stopped', ...stopped })
+      return stopped
+    } catch (err) {
+      console.error('captureStop: unexpected throw', err)
+      this.emitCaptureWarning('raw capture stop failed: engine offline')
+      return null
+    } finally {
+      if (this.stoppingCaptureId === id) this.stoppingCaptureId = null
     }
   }
 
@@ -258,12 +343,67 @@ export class Pipeline {
   }
 
   private async onFrameAsync(frame: Uint8Array): Promise<void> {
+    this.queueCaptureAppend(frame)
     try {
       await this.scoreFrame(frame)
     } finally {
       // Per-frame hook (mock/accelerated runs advance their virtual clock here).
       this.onFrameScored?.()
     }
+  }
+
+  private queueCaptureAppend(frame: Uint8Array): void {
+    const id = this.captureId
+    if (id === null) return
+
+    this.captureAppendChain = this.captureAppendChain
+      .then(() => this.appendCaptureFrame(id, frame))
+      .catch((err) => {
+        console.error('capture append chain error', err)
+        this.stopCaptureTeeAfterAppendFailure(id, 'raw capture append failed: engine offline')
+      })
+  }
+
+  private async appendCaptureFrame(
+    captureId: string,
+    frame: Uint8Array,
+  ): Promise<void> {
+    if (this.captureId !== captureId && this.stoppingCaptureId !== captureId) return
+
+    let res
+    try {
+      res = await this.client.captureAppend(captureId, frame)
+    } catch (err) {
+      console.error('captureAppend: unexpected throw', err)
+      this.stopCaptureTeeAfterAppendFailure(
+        captureId,
+        'raw capture append failed: engine offline',
+      )
+      return
+    }
+
+    if (res.kind !== 'ok') {
+      this.stopCaptureTeeAfterAppendFailure(
+        captureId,
+        `raw capture append failed: ${describeEngineFailure(res)}`,
+      )
+      return
+    }
+
+    this.captureSecondsTotal = res.value.seconds_total
+    this.onCaptureEvent?.({
+      kind: 'append',
+      captureId,
+      bytesTotal: res.value.bytes_total,
+      secondsTotal: res.value.seconds_total,
+    })
+  }
+
+  private stopCaptureTeeAfterAppendFailure(captureId: string, message: string): void {
+    if (this.captureId === captureId) this.captureId = null
+    if (this.captureAppendFailed) return
+    this.captureAppendFailed = true
+    this.emitCaptureWarning(message)
   }
 
   private async scoreFrame(frame: Uint8Array): Promise<void> {
@@ -367,6 +507,15 @@ export class Pipeline {
       this.onStateChange?.(state)
     }
   }
+
+  private emitCaptureWarning(message: string): void {
+    this.onCaptureEvent?.({ kind: 'warning', message })
+  }
+}
+
+function describeEngineFailure(res: Exclude<EngineResult<unknown>, { kind: 'ok' }>): string {
+  if (res.kind === 'offline') return 'engine offline'
+  return `${res.status} ${res.detail}`
 }
 
 export { FRAME_BYTES }

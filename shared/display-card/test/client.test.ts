@@ -147,6 +147,67 @@ describe("EngineClient — happy paths", () => {
     expect(JSON.parse(init.body).session_id).toBeNull();
   });
 
+  it("captureStart POSTs tag and returns the capture id", async () => {
+    const fetchFn = jsonOk({ capture_id: "cap-1" });
+    const client = new EngineClient(BASE, fetchFn);
+
+    const result = await client.captureStart("g2-characterization");
+
+    expect(result).toEqual({
+      kind: "ok",
+      value: { capture_id: "cap-1" },
+    });
+
+    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("http://localhost:8000/capture/start");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(init.body)).toEqual({ tag: "g2-characterization" });
+  });
+
+  it("captureAppend base64-encodes a known 4-byte PCM frame", async () => {
+    const fetchFn = jsonOk({ bytes_total: 4, seconds_total: 0.000125 });
+    const client = new EngineClient(BASE, fetchFn);
+
+    const pcm = new Uint8Array([0x01, 0x00, 0xff, 0xff]);
+    const result = await client.captureAppend("cap-1", pcm);
+
+    expect(result).toEqual({
+      kind: "ok",
+      value: { bytes_total: 4, seconds_total: 0.000125 },
+    });
+
+    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("http://localhost:8000/capture/append");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(init.body)).toEqual({
+      capture_id: "cap-1",
+      pcm_b64: Buffer.from(pcm).toString("base64"),
+    });
+  });
+
+  it("captureStop POSTs capture id and returns the wav path", async () => {
+    const fetchFn = jsonOk({
+      wav_path: "captures/cap-1.wav",
+      duration_s: 12.5,
+    });
+    const client = new EngineClient(BASE, fetchFn);
+
+    const result = await client.captureStop("cap-1");
+
+    expect(result).toEqual({
+      kind: "ok",
+      value: { wav_path: "captures/cap-1.wav", duration_s: 12.5 },
+    });
+
+    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("http://localhost:8000/capture/stop");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(init.body)).toEqual({ capture_id: "cap-1" });
+  });
+
   it("health GETs /health and returns ok", async () => {
     const fetchFn = jsonOk({
       status: "ok",
@@ -180,6 +241,16 @@ describe("EngineClient — failure handling", () => {
     expect(result).toEqual({ kind: "offline" });
   });
 
+  it("captureStart network rejection becomes {kind:'offline'}", async () => {
+    const fetchFn = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    }) as unknown as typeof fetch;
+    const client = new EngineClient(BASE, fetchFn);
+
+    const result = await client.captureStart("g2-characterization");
+    expect(result).toEqual({ kind: "offline" });
+  });
+
   it("404 becomes http_error with FastAPI detail", async () => {
     const fetchFn = jsonError(404, "no saved baseline for tag 'pump-7'");
     const client = new EngineClient(BASE, fetchFn);
@@ -189,6 +260,18 @@ describe("EngineClient — failure handling", () => {
       kind: "http_error",
       status: 404,
       detail: "no saved baseline for tag 'pump-7'",
+    });
+  });
+
+  it("404 from /capture/append becomes http_error with detail", async () => {
+    const fetchFn = jsonError(404, "unknown capture_id");
+    const client = new EngineClient(BASE, fetchFn);
+
+    const result = await client.captureAppend("missing", new Uint8Array([1, 2]));
+    expect(result).toEqual({
+      kind: "http_error",
+      status: 404,
+      detail: "unknown capture_id",
     });
   });
 

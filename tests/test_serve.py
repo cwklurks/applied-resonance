@@ -281,6 +281,40 @@ def test_label_writes_both_files(tmp_path):
     assert meta["sr"] == SR
 
 
+def test_label_accepts_field_recorder_condition_and_stats(tmp_path):
+    client, _ = _client(tmp_path)
+    audio = _noise(2 * SR, seed=12)
+    body = {
+        "session_id": None,
+        "pcm_b64": _pcm_b64(audio),
+        "machine_type": "compressor",
+        "condition": "suspected issue",
+        "contains_speech": True,
+        "note": "north wall",
+        "site_tag": "shop-7-comp-2",
+        "client_recorded_at": "2026-06-11T20:00:00.000Z",
+        "client_duration_s": 2.0,
+        "client_peak_abs": 0.98,
+        "client_clipped": True,
+    }
+    r = client.post("/label", json=body)
+    assert r.status_code == 200, r.text
+
+    from engine.paths import REPO_ROOT
+
+    meta = json.loads((REPO_ROOT / r.json()["json_path"]).read_text())
+    assert meta["machine_type"] == "compressor"
+    assert meta["condition"] == "suspected issue"
+    assert meta["site_tag"] == "shop-7-comp-2"
+    assert meta["contains_speech"] is True
+    assert meta["public_dataset_default_excluded"] is True
+    assert meta["duration_s"] == pytest.approx(2.0)
+    assert meta["client_duration_s"] == 2.0
+    assert meta["client_peak_abs"] == 0.98
+    assert meta["client_clipped"] is True
+    assert meta["clipped"] is True
+
+
 # ------------------------------------------------------- evidence line ----
 
 

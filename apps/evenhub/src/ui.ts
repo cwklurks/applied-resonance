@@ -17,7 +17,15 @@ export interface Settings {
   mode: Mode
 }
 
+export interface CaptureControlHandlers {
+  start(tag: string): Promise<string | null>
+  stop(): Promise<{ wavPath: string; durationS: number } | null>
+  capturing(): boolean
+  seconds(): number
+}
+
 const STORAGE_KEY = 'earsight.settings.v1'
+const DEFAULT_CAPTURE_TAG = 'g2-characterization'
 
 const DEFAULTS: Settings = {
   engineUrl: 'http://localhost:8000',
@@ -31,6 +39,12 @@ let line2El: HTMLDivElement
 let badgeEl: HTMLDivElement
 let evidenceEl: HTMLPreElement
 let logEl: HTMLDivElement
+let captureTagEl: HTMLInputElement
+let captureButtonEl: HTMLButtonElement
+let captureElapsedEl: HTMLDivElement
+let capturePathEl: HTMLDivElement
+let captureHandlers: CaptureControlHandlers | null = null
+let captureTimer: number | null = null
 
 /** Read persisted settings, falling back to defaults for any missing field. */
 export function readSettings(): Settings {
@@ -100,6 +114,18 @@ export function mountUi(): void {
         <button id="save">Save &amp; reload</button>
       </section>
 
+      <section class="raw-capture">
+        <h2>Raw capture</h2>
+        <label>Tag
+          <input id="captureTag" type="text" value="${DEFAULT_CAPTURE_TAG}" />
+        </label>
+        <div class="capture-row">
+          <button id="captureToggle">Start</button>
+          <div id="captureElapsed" class="capture-elapsed">0.0s</div>
+        </div>
+        <div id="capturePath" class="capture-path">—</div>
+      </section>
+
       <section class="evidence">
         <h2>Last evidence</h2>
         <pre id="evidence">—</pre>
@@ -119,6 +145,10 @@ export function mountUi(): void {
   badgeEl = app.querySelector<HTMLDivElement>('#badge')!
   evidenceEl = app.querySelector<HTMLPreElement>('#evidence')!
   logEl = app.querySelector<HTMLDivElement>('#log')!
+  captureTagEl = app.querySelector<HTMLInputElement>('#captureTag')!
+  captureButtonEl = app.querySelector<HTMLButtonElement>('#captureToggle')!
+  captureElapsedEl = app.querySelector<HTMLDivElement>('#captureElapsed')!
+  capturePathEl = app.querySelector<HTMLDivElement>('#capturePath')!
 
   app.querySelector<HTMLButtonElement>('#save')!.addEventListener('click', () => {
     const next: Settings = {
@@ -129,6 +159,10 @@ export function mountUi(): void {
     }
     writeSettings(next)
     location.reload()
+  })
+
+  captureButtonEl.addEventListener('click', () => {
+    void toggleCapture()
   })
 
   injectStyles()
@@ -168,6 +202,76 @@ export function pushLog(message: string): void {
   logEl.scrollTop = logEl.scrollHeight
 }
 
+export function bindCaptureControls(handlers: CaptureControlHandlers): void {
+  captureHandlers = handlers
+  refreshCaptureUi()
+}
+
+export function setCaptureStatus(capturing: boolean, seconds: number): void {
+  if (captureButtonEl) captureButtonEl.textContent = capturing ? 'Stop' : 'Start'
+  if (captureElapsedEl) captureElapsedEl.textContent = `${seconds.toFixed(1)}s`
+  if (capturing) {
+    startCaptureTimer()
+  } else {
+    stopCaptureTimer()
+  }
+}
+
+export function setCaptureResult(wavPath: string, durationS: number): void {
+  if (capturePathEl) capturePathEl.textContent = `${wavPath} (${durationS.toFixed(1)}s)`
+}
+
+async function toggleCapture(): Promise<void> {
+  if (!captureHandlers) {
+    pushLog('raw capture unavailable')
+    return
+  }
+
+  captureButtonEl.disabled = true
+  try {
+    if (captureHandlers.capturing()) {
+      const stopped = await captureHandlers.stop()
+      if (stopped) {
+        setCaptureResult(stopped.wavPath, stopped.durationS)
+        setCaptureStatus(false, stopped.durationS)
+      } else {
+        refreshCaptureUi()
+      }
+      return
+    }
+
+    const tag = captureTagEl.value.trim() || DEFAULT_CAPTURE_TAG
+    capturePathEl.textContent = '—'
+    const captureId = await captureHandlers.start(tag)
+    if (captureId) {
+      setCaptureStatus(true, 0)
+    } else {
+      refreshCaptureUi()
+    }
+  } finally {
+    captureButtonEl.disabled = false
+  }
+}
+
+function refreshCaptureUi(): void {
+  if (!captureHandlers) return
+  setCaptureStatus(captureHandlers.capturing(), captureHandlers.seconds())
+}
+
+function startCaptureTimer(): void {
+  if (captureTimer !== null) return
+  captureTimer = window.setInterval(() => {
+    if (!captureHandlers) return
+    setCaptureStatus(captureHandlers.capturing(), captureHandlers.seconds())
+  }, 1000)
+}
+
+function stopCaptureTimer(): void {
+  if (captureTimer === null) return
+  window.clearInterval(captureTimer)
+  captureTimer = null
+}
+
 function escapeAttr(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 }
@@ -203,6 +307,14 @@ function injectStyles(): void {
     .settings label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9A9A9A; }
     .settings .row { display: flex; gap: 12px; }
     .settings .row label { flex: 1; }
+    .raw-capture { display: flex; flex-direction: column; gap: 10px; background: #2A2A2A;
+      border: 1px solid #3E3E3E; border-radius: 12px; padding: 14px; }
+    .raw-capture label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9A9A9A; }
+    .capture-row { display: flex; align-items: center; gap: 12px; }
+    .capture-row button { min-width: 96px; }
+    .capture-elapsed { font: 13px/1.4 ui-monospace, 'SF Mono', Menlo, monospace; color: #C7C7C7; }
+    .capture-path { min-height: 18px; font: 11px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+      color: #9A9A9A; word-break: break-word; }
     input, select { background: #1E1E1E; color: #E5E5E5; border: 1px solid #3E3E3E;
       border-radius: 8px; padding: 8px 10px; font: inherit; }
     button { background: #3CFA44; color: #0A0A0A; border: none; border-radius: 8px;

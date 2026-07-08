@@ -50,6 +50,20 @@ export interface LabelResponse {
   json_path: string;
 }
 
+export interface CaptureStartResponse {
+  capture_id: string;
+}
+
+export interface CaptureAppendResponse {
+  bytes_total: number;
+  seconds_total: number;
+}
+
+export interface CaptureStopResponse {
+  wav_path: string;
+  duration_s: number;
+}
+
 export interface HealthResponse {
   status: string;
   backend: string;
@@ -104,6 +118,26 @@ export class EngineClient {
       contains_speech: req.contains_speech ?? false,
       note: req.note ?? "",
       site_tag: req.site_tag ?? "",
+    });
+  }
+
+  captureStart(tag: string): Promise<EngineResult<CaptureStartResponse>> {
+    return this.postJson<CaptureStartResponse>("/capture/start", { tag });
+  }
+
+  captureAppend(
+    captureId: string,
+    pcm: Uint8Array,
+  ): Promise<EngineResult<CaptureAppendResponse>> {
+    return this.postJson<CaptureAppendResponse>("/capture/append", {
+      capture_id: captureId,
+      pcm_b64: pcmToBase64(pcm),
+    });
+  }
+
+  captureStop(captureId: string): Promise<EngineResult<CaptureStopResponse>> {
+    return this.postJson<CaptureStopResponse>("/capture/stop", {
+      capture_id: captureId,
     });
   }
 
