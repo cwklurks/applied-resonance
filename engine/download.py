@@ -19,7 +19,7 @@ import struct
 import time
 import zlib
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 import requests
@@ -532,7 +532,26 @@ def member_target_path(dest: Path, snr_dir: str, name: str) -> Path:
     Members are ``{machine}/id_XX/{cond}/file.wav``; the ``{SNR}_dB`` level is
     inserted from the zip name because members don't include it.
     """
-    return dest / snr_dir / name
+    member = PurePosixPath(name)
+    raw_parts = name.split("/")
+    if (
+        not name
+        or member.is_absolute()
+        or "\\" in name
+        or "\x00" in name
+        or any(part in ("", ".", "..") for part in raw_parts)
+    ):
+        raise ValueError(f"unsafe archive member path: {name!r}")
+
+    extraction_root = (dest / snr_dir).resolve()
+    target = extraction_root.joinpath(*member.parts).resolve()
+    try:
+        target.relative_to(extraction_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"archive member path resolves outside extraction root: {name!r}"
+        ) from exc
+    return target
 
 
 def write_atomic(target: Path, data: bytes) -> None:

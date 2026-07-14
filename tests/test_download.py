@@ -279,6 +279,32 @@ def test_member_target_path_inserts_snr_level(tmp_path):
     assert p == dest / "0_dB" / "fan" / "id_00" / "normal" / "00000000.wav"
 
 
+@pytest.mark.parametrize(
+    "member_name",
+    [
+        "../../escaped.wav",
+        "fan/id_00/normal/../../../escaped.wav",
+        "/tmp/escaped.wav",
+        r"fan\id_00\normal\..\escaped.wav",
+        "fan/id_00/normal/../escaped.wav",
+        "fan//id_00/normal/escaped.wav",
+    ],
+)
+def test_member_target_path_rejects_unsafe_archive_members(tmp_path, member_name):
+    with pytest.raises(ValueError, match="unsafe archive member path"):
+        member_target_path(tmp_path / "mimii", "0_dB", member_name)
+
+
+def test_member_target_path_rejects_existing_symlink_escape(tmp_path):
+    dest = tmp_path / "mimii"
+    extraction_root = dest / "0_dB"
+    extraction_root.mkdir(parents=True)
+    (extraction_root / "fan").symlink_to(tmp_path / "outside", target_is_directory=True)
+
+    with pytest.raises(ValueError, match="outside extraction root"):
+        member_target_path(dest, "0_dB", "fan/id_00/normal/escaped.wav")
+
+
 # --- Full-mode resume math ----------------------------------------------------
 
 
