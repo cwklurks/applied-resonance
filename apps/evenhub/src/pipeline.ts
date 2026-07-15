@@ -86,6 +86,12 @@ interface QueuedCaptureFrame {
   frame: Uint8Array
 }
 
+interface CaptureFinalization {
+  captureId: string
+  partial: boolean
+  promise: Promise<{ wavPath: string; durationS: number } | null>
+}
+
 /** Engine wire state → HUD state. Only these four come back from /score. */
 function engineStateToHud(state: string): HudState {
   switch (state) {
@@ -135,6 +141,7 @@ export class Pipeline {
   private captureDrainWaiters: Array<() => void> = []
   private captureId: string | null = null
   private stoppingCaptureId: string | null = null
+  private captureFinalization: CaptureFinalization | null = null
   private captureSecondsTotal = 0
   private captureAppendFailed = false
 
@@ -270,13 +277,44 @@ export class Pipeline {
     if (id === null) return null
 
     this.captureId = null
-    this.stoppingCaptureId = id
+    return this.beginCaptureFinalization(id, false)
+  }
+
+  private beginCaptureFinalization(
+    captureId: string,
+    partial: boolean,
+  ): Promise<{ wavPath: string; durationS: number } | null> {
+    if (this.captureFinalization?.captureId === captureId) {
+      if (partial) this.captureFinalization.partial = true
+      return this.captureFinalization.promise
+    }
+
+    const finalization: CaptureFinalization = {
+      captureId,
+      partial,
+      promise: Promise.resolve(null),
+    }
+    this.captureFinalization = finalization
+    this.stoppingCaptureId = captureId
+    finalization.promise = this.finalizeCapture(finalization)
+    return finalization.promise
+  }
+
+  private async finalizeCapture(
+    finalization: CaptureFinalization,
+  ): Promise<{ wavPath: string; durationS: number } | null> {
+    const id = finalization.captureId
     try {
       await this.waitForCaptureDrain(id)
 
       const res = await this.client.captureStop(id)
       if (res.kind !== 'ok') {
-        this.emitCaptureWarning(`raw capture stop failed: ${describeEngineFailure(res)}`)
+        const failure = describeEngineFailure(res)
+        this.emitCaptureWarning(
+          finalization.partial
+            ? `raw capture cleanup failed: ${failure}; server idle cleanup pending`
+            : `raw capture stop failed: ${failure}`,
+        )
         return null
       }
 
@@ -285,14 +323,22 @@ export class Pipeline {
         durationS: res.value.duration_s,
       }
       this.captureSecondsTotal = stopped.durationS
+      if (finalization.partial) {
+        this.emitCaptureWarning(`raw capture finalized partial recording: ${stopped.wavPath}`)
+      }
       this.onCaptureEvent?.({ kind: 'stopped', ...stopped })
       return stopped
     } catch (err) {
       console.error('captureStop: unexpected throw', err)
-      this.emitCaptureWarning('raw capture stop failed: engine offline')
+      this.emitCaptureWarning(
+        finalization.partial
+          ? 'raw capture cleanup failed: engine offline; server idle cleanup pending'
+          : 'raw capture stop failed: engine offline',
+      )
       return null
     } finally {
       if (this.stoppingCaptureId === id) this.stoppingCaptureId = null
+      if (this.captureFinalization === finalization) this.captureFinalization = null
     }
   }
 
@@ -427,7 +473,7 @@ export class Pipeline {
       this.stoppingCaptureId = id
       this.stopCaptureTeeAfterAppendFailure(
         id,
-        'raw capture stopped: append queue limit reached',
+        'raw capture stopping early: append queue limit reached',
       )
       this.resolveCaptureDrainIfIdle()
       return
@@ -454,9 +500,6 @@ export class Pipeline {
       }
     } finally {
       this.captureAppending = false
-      if (this.captureAppendFailed && this.stoppingCaptureId !== null) {
-        this.stoppingCaptureId = null
-      }
       this.resolveCaptureDrainIfIdle()
     }
   }
@@ -516,9 +559,14 @@ export class Pipeline {
 
   private stopCaptureTeeAfterAppendFailure(captureId: string, message: string): void {
     if (this.captureId === captureId) this.captureId = null
-    if (this.captureAppendFailed) return
-    this.captureAppendFailed = true
-    this.emitCaptureWarning(message)
+    this.captureAppendQueue = this.captureAppendQueue.filter(
+      (queued) => queued.captureId !== captureId,
+    )
+    if (!this.captureAppendFailed) {
+      this.captureAppendFailed = true
+      this.emitCaptureWarning(message)
+    }
+    void this.beginCaptureFinalization(captureId, true)
   }
 
   private async scoreFrame(frame: Uint8Array): Promise<void> {

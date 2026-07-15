@@ -2,30 +2,55 @@ import { describe, it, expect, vi } from "vitest";
 import { Buffer } from "node:buffer";
 import { EngineClient } from "../src/client.js";
 
+function receiverCheckingFetch(
+  impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+): typeof fetch {
+  return vi.fn(function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+    if (this !== globalThis) throw new TypeError("Illegal invocation");
+    return impl(input, init);
+  }) as unknown as typeof fetch;
+}
+
 /** Build a stub `fetch` returning a JSON 2xx response, capturing the call. */
 function jsonOk(body: unknown, status = 200): typeof fetch {
-  return vi.fn(async () =>
+  return receiverCheckingFetch(async () =>
     new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
     }),
-  ) as unknown as typeof fetch;
+  );
 }
 
 /** Build a stub `fetch` returning a FastAPI-style error with `{detail}`. */
 function jsonError(status: number, detail: string): typeof fetch {
-  return vi.fn(async () =>
+  return receiverCheckingFetch(async () =>
     new Response(JSON.stringify({ detail }), {
       status,
       statusText: "Error",
       headers: { "Content-Type": "application/json" },
     }),
-  ) as unknown as typeof fetch;
+  );
 }
 
 const BASE = "http://localhost:8000";
 
 describe("EngineClient — happy paths", () => {
+  it("invokes fetch with the global receiver for strict WebViews", async () => {
+    const fetchFn = receiverCheckingFetch(async () =>
+      new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const client = new EngineClient(BASE, fetchFn);
+
+    await expect(client.health()).resolves.toEqual({
+      kind: "ok",
+      value: { status: "ok" },
+    });
+  });
+
   it("sends the bearer token on protected routes but not public health", async () => {
     const fetchFn = jsonOk({ session_id: "s", state: "LISTENING" });
     const client = new EngineClient(BASE, fetchFn, {
@@ -266,9 +291,9 @@ describe("EngineClient — happy paths", () => {
 
 describe("EngineClient — failure handling", () => {
   it("network rejection becomes {kind:'offline'}", async () => {
-    const fetchFn = vi.fn(async () => {
+    const fetchFn = receiverCheckingFetch(async () => {
       throw new TypeError("Failed to fetch");
-    }) as unknown as typeof fetch;
+    });
     const client = new EngineClient(BASE, fetchFn);
 
     const result = await client.health();
@@ -276,9 +301,9 @@ describe("EngineClient — failure handling", () => {
   });
 
   it("aborts a half-open fetch at the request deadline", async () => {
-    const fetchFn = vi.fn(
+    const fetchFn = receiverCheckingFetch(
       () => new Promise<Response>(() => undefined),
-    ) as unknown as typeof fetch;
+    );
     const client = new EngineClient(BASE, fetchFn, { timeoutMs: 10 });
 
     await expect(client.health()).resolves.toEqual({ kind: "offline" });
@@ -292,16 +317,16 @@ describe("EngineClient — failure handling", () => {
       status: 200,
       json: () => new Promise<unknown>(() => undefined),
     } as Response;
-    const fetchFn = vi.fn(async () => response) as unknown as typeof fetch;
+    const fetchFn = receiverCheckingFetch(async () => response);
     const client = new EngineClient(BASE, fetchFn, { timeoutMs: 10 });
 
     await expect(client.health()).resolves.toEqual({ kind: "offline" });
   });
 
   it("captureStart network rejection becomes {kind:'offline'}", async () => {
-    const fetchFn = vi.fn(async () => {
+    const fetchFn = receiverCheckingFetch(async () => {
       throw new TypeError("Failed to fetch");
-    }) as unknown as typeof fetch;
+    });
     const client = new EngineClient(BASE, fetchFn);
 
     const result = await client.captureStart("g2-characterization");
@@ -345,12 +370,12 @@ describe("EngineClient — failure handling", () => {
   });
 
   it("non-2xx with non-JSON body falls back to statusText for detail", async () => {
-    const fetchFn = vi.fn(async () =>
+    const fetchFn = receiverCheckingFetch(async () =>
       new Response("Internal Server Error", {
         status: 500,
         statusText: "Internal Server Error",
       }),
-    ) as unknown as typeof fetch;
+    );
     const client = new EngineClient(BASE, fetchFn);
 
     const result = await client.health();

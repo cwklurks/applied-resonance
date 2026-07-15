@@ -9,9 +9,9 @@ Run with validated environment settings:
 
     uv run python -m engine.serve
 
-The embedder is constructed lazily on the first request that needs it, so
-``create_app`` (and ``TestClient`` with an injected fake) stays cheap and never
-triggers a model load just to answer ``/health``.
+The production embedder is constructed and warmed during application startup,
+before the service becomes ready. ``create_app`` itself (and ``TestClient``
+with an injected fake) stays cheap.
 """
 
 import asyncio
@@ -436,6 +436,25 @@ def _slice_windows(audio: np.ndarray) -> list[np.ndarray]:
     return windows
 
 
+def _build_ready_embedder():
+    """Construct the configured backend and materialize it on one bounded window."""
+    backend = os.environ.get("EARSIGHT_BACKEND", "torch")
+    device = os.environ.get("EARSIGHT_DEVICE")
+    logger.info("warming embedder backend=%s device=%s", backend, device)
+    started = time.monotonic()
+    embedder = get_embedder(backend, device)
+    warmup = np.asarray(
+        embedder.embed([np.zeros(_WINDOW_N, dtype=np.float32)]),
+        dtype=np.float32,
+    )
+    if warmup.shape != (1, 2048) or not np.isfinite(warmup).all():
+        raise RuntimeError(
+            "embedder warmup must return one finite 2048-dimensional embedding"
+        )
+    logger.info("embedder ready after %.3fs", time.monotonic() - started)
+    return embedder
+
+
 # ------------------------------------------------------------- the app ----
 
 
@@ -448,7 +467,7 @@ def create_app(
     clock: Callable[[], float] | None = None,
 ) -> FastAPI:
     """Build the scoring app. ``embedder`` may be injected (tests); otherwise it
-    is constructed lazily on first use from ``EARSIGHT_BACKEND``/``EARSIGHT_DEVICE``.
+    is warmed during lifespan startup from ``EARSIGHT_BACKEND``/``EARSIGHT_DEVICE``.
     """
     settings = (settings or ServiceSettings.from_env()).validate()
     clock = clock or time.monotonic
@@ -468,6 +487,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app):
+        if embedder is None:
+            _app.state._embedder = await asyncio.to_thread(_build_ready_embedder)
+
         interval = max(0.1, min(settings.session_idle_s, settings.capture_idle_s) / 2)
 
         async def reap_idle():
@@ -511,13 +533,11 @@ def create_app(
     app.state._embedder = embedder
 
     def get_embedder_dep(request: Request):
-        """Lazily build the embedder on first request that needs it."""
-        if request.app.state._embedder is None:
-            backend = os.environ.get("EARSIGHT_BACKEND", "torch")
-            device = os.environ.get("EARSIGHT_DEVICE")
-            logger.info("constructing embedder backend=%s device=%s", backend, device)
-            request.app.state._embedder = get_embedder(backend, device)
-        return request.app.state._embedder
+        """Return only a lifespan-prepared or explicitly injected embedder."""
+        ready = request.app.state._embedder
+        if ready is None:
+            raise HTTPException(status_code=503, detail="engine model is not ready")
+        return ready
 
     # ------------------------------------------------------------ health ----
 

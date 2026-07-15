@@ -211,8 +211,11 @@ export class EngineClient {
     };
 
     try {
+      // Some WebViews require native fetch to be invoked with the global object
+      // as its receiver. Calling a stored fetch as `this.fetchFn(...)` binds the
+      // EngineClient instance instead and can throw before any request is sent.
       const response = await Promise.race([
-        this.fetchFn(`${this.baseUrl}${path}`, requestInit),
+        this.fetchFn.call(globalThis, `${this.baseUrl}${path}`, requestInit),
         deadline,
       ]);
 
