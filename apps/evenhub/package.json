@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "pack": "evenhub pack",
+    "manifest:generate": "node scripts/generate-manifest.mjs",
+    "package:validate": "npm run manifest:generate && npm run build && node scripts/validate-package.mjs",
+    "pack": "npm run package:validate && evenhub pack app.generated.json ./dist -o applied-resonance.ehpk",
     "simulate": "evenhub-simulator http://localhost:5173",
     "test": "vitest run"
   },

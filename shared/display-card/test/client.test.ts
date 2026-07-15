@@ -26,6 +26,45 @@ function jsonError(status: number, detail: string): typeof fetch {
 const BASE = "http://localhost:8000";
 
 describe("EngineClient — happy paths", () => {
+  it("sends the bearer token on protected routes but not public health", async () => {
+    const fetchFn = jsonOk({ session_id: "s", state: "LISTENING" });
+    const client = new EngineClient(BASE, fetchFn, {
+      bearerToken: "runtime-only-token",
+    });
+
+    await client.startSession({ mode: "saved", tag: "pump" });
+    const [, protectedInit] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(protectedInit.headers).toEqual({
+      "Content-Type": "application/json",
+      Authorization: "Bearer runtime-only-token",
+    });
+
+    (fetchFn as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await client.health();
+    const [, healthInit] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[1];
+    expect(healthInit.headers).toBeUndefined();
+  });
+
+  it("checks baseline existence through the protected lookup route", async () => {
+    const fetchFn = jsonOk({ exists: true });
+    const client = new EngineClient(BASE, fetchFn, {
+      bearerToken: "runtime-only-token",
+    });
+
+    await expect(client.hasBaseline("pump / 7")).resolves.toEqual({
+      kind: "ok",
+      value: { exists: true },
+    });
+    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("http://localhost:8000/baselines/pump%20%2F%207");
+    expect(init.headers).toEqual({ Authorization: "Bearer runtime-only-token" });
+  });
+
   it("startSession POSTs the right URL/method/body and returns ok", async () => {
     const fetchFn = jsonOk({
       session_id: "abc",
@@ -209,19 +248,14 @@ describe("EngineClient — happy paths", () => {
   });
 
   it("health GETs /health and returns ok", async () => {
-    const fetchFn = jsonOk({
-      status: "ok",
-      backend: "torch",
-      baselines: ["pump-7"],
-      sessions: 2,
-    });
+    const fetchFn = jsonOk({ status: "ok" });
     const client = new EngineClient(BASE, fetchFn);
 
     const result = await client.health();
 
     expect(result).toEqual({
       kind: "ok",
-      value: { status: "ok", backend: "torch", baselines: ["pump-7"], sessions: 2 },
+      value: { status: "ok" },
     });
 
     const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -239,6 +273,29 @@ describe("EngineClient — failure handling", () => {
 
     const result = await client.health();
     expect(result).toEqual({ kind: "offline" });
+  });
+
+  it("aborts a half-open fetch at the request deadline", async () => {
+    const fetchFn = vi.fn(
+      () => new Promise<Response>(() => undefined),
+    ) as unknown as typeof fetch;
+    const client = new EngineClient(BASE, fetchFn, { timeoutMs: 10 });
+
+    await expect(client.health()).resolves.toEqual({ kind: "offline" });
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect((init.signal as AbortSignal).aborted).toBe(true);
+  });
+
+  it("keeps the deadline active while reading a response body", async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      json: () => new Promise<unknown>(() => undefined),
+    } as Response;
+    const fetchFn = vi.fn(async () => response) as unknown as typeof fetch;
+    const client = new EngineClient(BASE, fetchFn, { timeoutMs: 10 });
+
+    await expect(client.health()).resolves.toEqual({ kind: "offline" });
   });
 
   it("captureStart network rejection becomes {kind:'offline'}", async () => {
@@ -305,7 +362,7 @@ describe("EngineClient — failure handling", () => {
   });
 
   it("trims a trailing slash from the base URL", async () => {
-    const fetchFn = jsonOk({ status: "ok", backend: "x", baselines: [], sessions: 0 });
+    const fetchFn = jsonOk({ status: "ok" });
     const client = new EngineClient("http://localhost:8000/", fetchFn);
 
     await client.health();

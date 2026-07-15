@@ -8,12 +8,18 @@ be checked by building a second app over the same root.
 import base64
 import hashlib
 import json
+from dataclasses import replace
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from engine.serve import create_app
+from engine.serve import (
+    MAX_REQUEST_BYTES,
+    MAX_SCORE_PCM_BYTES,
+    ServiceSettings,
+    create_app,
+)
 
 SR = 16000
 
@@ -65,14 +71,28 @@ def _noise(n, seed=0):
     return np.random.default_rng(seed).standard_normal(n).astype(np.float32) * 0.05
 
 
-def _client(tmp_path, embedder=None):
+class FakeClock:
+    def __init__(self):
+        self.value = 100.0
+
+    def __call__(self):
+        return self.value
+
+    def advance(self, seconds):
+        self.value += seconds
+
+
+def _client(tmp_path, embedder=None, *, settings=None, clock=None, client_host="127.0.0.1"):
     embedder = embedder if embedder is not None else FakeEmbedder()
     app = create_app(
         embedder=embedder,
         baseline_root=tmp_path / "b",
         label_dir=tmp_path / "d",
+        capture_root=tmp_path / "c",
+        settings=settings,
+        clock=clock,
     )
-    return TestClient(app), embedder
+    return TestClient(app, client=(client_host, 50000)), embedder
 
 
 # ------------------------------------------------------------- /health ----
@@ -82,11 +102,84 @@ def test_health_ok_empty_baselines(tmp_path):
     client, _ = _client(tmp_path)
     r = client.get("/health")
     assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "ok"
-    assert body["baselines"] == []
-    assert body["sessions"] == 0
-    assert "backend" in body
+    assert r.json() == {"status": "ok"}
+
+
+def test_loopback_mode_rejects_non_loopback_clients(tmp_path):
+    client, _ = _client(tmp_path, client_host="192.0.2.10")
+    assert client.get("/health").status_code == 200
+    r = client.post("/session/start", json={"mode": "session", "tag": "x"})
+    assert r.status_code == 403
+
+
+def test_remote_mode_requires_token_and_explicit_cors(monkeypatch):
+    monkeypatch.setenv("EARSIGHT_REMOTE_ACCESS", "1")
+    monkeypatch.delenv("EARSIGHT_API_TOKEN", raising=False)
+    monkeypatch.delenv("EARSIGHT_CORS_ORIGINS", raising=False)
+    with pytest.raises(RuntimeError, match="EARSIGHT_API_TOKEN"):
+        ServiceSettings.from_env()
+
+    monkeypatch.setenv("EARSIGHT_API_TOKEN", "t" * 32)
+    with pytest.raises(RuntimeError, match="EARSIGHT_CORS_ORIGINS"):
+        ServiceSettings.from_env()
+
+    monkeypatch.setenv("EARSIGHT_CORS_ORIGINS", "https://app.example.test")
+    monkeypatch.setenv("EARSIGHT_BIND_HOST", "0.0.0.0")
+    with pytest.raises(RuntimeError, match="HTTPS gateway"):
+        ServiceSettings.from_env()
+
+
+def test_remote_auth_covers_every_non_health_route(tmp_path):
+    token = "t" * 32
+    settings = replace(
+        ServiceSettings(),
+        remote_access=True,
+        api_token=token,
+        cors_origins=("https://app.example.test",),
+    )
+    client, _ = _client(
+        tmp_path,
+        settings=settings,
+        client_host="192.0.2.10",
+    )
+    routes = [
+        ("GET", "/baselines/pump", None),
+        ("POST", "/session/start", {}),
+        ("POST", "/score", {}),
+        ("POST", "/label", {}),
+        ("POST", "/capture/start", {}),
+        ("POST", "/capture/append", {}),
+        ("POST", "/capture/stop", {}),
+    ]
+
+    assert client.get("/health").json() == {"status": "ok"}
+    for method, path, body in routes:
+        request = getattr(client, method.lower())
+        kwargs = {} if body is None else {"json": body}
+        missing = request(path, **kwargs)
+        assert missing.status_code == 401, (method, path, missing.text)
+        assert missing.headers["www-authenticate"] == "Bearer"
+
+        wrong = request(
+            path,
+            headers={"Authorization": "Bearer wrong"},
+            **kwargs,
+        )
+        assert wrong.status_code == 401, (method, path, wrong.text)
+
+        authenticated = request(
+            path,
+            headers={"Authorization": f"Bearer {token}"},
+            **kwargs,
+        )
+        assert authenticated.status_code != 401, (method, path, authenticated.text)
+
+
+def test_docs_and_openapi_are_not_exposed(tmp_path):
+    client, _ = _client(tmp_path)
+    assert client.get("/docs").status_code == 404
+    assert client.get("/redoc").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
 
 
 # ----------------------------------------------- session capture flow ----
@@ -144,8 +237,8 @@ def test_session_capture_then_listen(tmp_path):
     assert final["state"] == "LISTENING"
     assert final["capture_remaining_s"] == 0.0
 
-    # Baseline now persisted and visible in /health.
-    assert "m1" in client.get("/health").json()["baselines"]
+    # Baseline now persisted and visible only through the protected lookup.
+    assert client.get("/baselines/m1").json() == {"exists": True}
 
     # Subsequent /score chunks eventually produce a numeric score+percentile.
     got_numeric = False
@@ -168,11 +261,11 @@ def test_saved_mode_survives_restart(tmp_path):
     # First app: capture a baseline to disk.
     client1, _ = _client(tmp_path)
     _run_capture(client1, tag="rig")
-    assert "rig" in client1.get("/health").json()["baselines"]
+    assert client1.get("/baselines/rig").json() == {"exists": True}
 
     # Second app over the SAME baseline root: no re-capture needed.
     client2, _ = _client(tmp_path)
-    assert "rig" in client2.get("/health").json()["baselines"]
+    assert client2.get("/baselines/rig").json() == {"exists": True}
 
     r = client2.post(
         "/session/start", json={"mode": "saved", "tag": "rig", "rpm": None}
@@ -194,6 +287,33 @@ def test_saved_mode_missing_tag_404(tmp_path):
         "/session/start", json={"mode": "saved", "tag": "nope", "rpm": None}
     )
     assert r.status_code == 404
+
+
+def test_protected_baseline_existence_replaces_health_disclosure(tmp_path):
+    client, _ = _client(tmp_path)
+    assert client.get("/baselines/missing").json() == {"exists": False}
+
+
+def test_scoring_session_capacity_and_idle_expiry(tmp_path):
+    clock = FakeClock()
+    settings = replace(ServiceSettings(), max_scoring_sessions=1, session_idle_s=5.0)
+    client, _ = _client(tmp_path, settings=settings, clock=clock)
+
+    first = client.post("/session/start", json={"mode": "session", "tag": "one"})
+    assert first.status_code == 200
+    first_id = first.json()["session_id"]
+    full = client.post("/session/start", json={"mode": "session", "tag": "two"})
+    assert full.status_code == 429
+
+    clock.advance(6.0)
+    replacement = client.post(
+        "/session/start", json={"mode": "session", "tag": "two"}
+    )
+    assert replacement.status_code == 200
+    expired = client.post(
+        "/score", json={"session_id": first_id, "pcm_b64": _pcm_b64(_noise(1))}
+    )
+    assert expired.status_code == 404
 
 
 # ----------------------------------------------------------- library 501 ----
@@ -247,6 +367,29 @@ def test_score_odd_byte_count_400(tmp_path):
     odd = base64.b64encode(b"\x01\x02\x03").decode("ascii")
     r = client.post("/score", json={"session_id": sid, "pcm_b64": odd})
     assert r.status_code == 400
+
+
+def test_score_decoded_pcm_and_request_body_limits(tmp_path):
+    client, _ = _client(tmp_path)
+    sid = client.post(
+        "/session/start", json={"mode": "session", "tag": "m1", "rpm": None}
+    ).json()["session_id"]
+
+    exact = base64.b64encode(b"\0" * MAX_SCORE_PCM_BYTES).decode("ascii")
+    assert client.post(
+        "/score", json={"session_id": sid, "pcm_b64": exact}
+    ).status_code == 200
+
+    too_much = base64.b64encode(b"\0" * (MAX_SCORE_PCM_BYTES + 2)).decode("ascii")
+    r = client.post("/score", json={"session_id": sid, "pcm_b64": too_much})
+    assert r.status_code == 413
+
+    r = client.post(
+        "/score",
+        content=b"x" * (MAX_REQUEST_BYTES + 1),
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 413
 
 
 # ------------------------------------------------------------- /label ----
@@ -347,25 +490,52 @@ def test_evidence_line_surfaced_on_suspect(tmp_path, monkeypatch):
     assert seen["evidence_line"] == "test line"
 
 
-def test_cors_allows_webview_origins(tmp_path):
-    """Browser shells (Even Hub WebView) call cross-origin; CORS must answer."""
-    from fastapi.testclient import TestClient
+def test_cors_uses_an_explicit_allowlist(tmp_path):
+    settings = replace(
+        ServiceSettings(),
+        cors_origins=("https://app.example.test",),
+    )
+    client, _ = _client(tmp_path, embedder=object(), settings=settings)
 
-    from engine.serve import create_app
-
-    client = TestClient(create_app(embedder=object(), baseline_root=tmp_path))
-
-    r = client.get("/health", headers={"Origin": "http://localhost:5173"})
+    r = client.get("/health", headers={"Origin": "https://app.example.test"})
     assert r.status_code == 200
-    assert r.headers.get("access-control-allow-origin") == "*"
+    assert r.headers.get("access-control-allow-origin") == "https://app.example.test"
 
     preflight = client.options(
         "/score",
         headers={
-            "Origin": "http://localhost:5173",
+            "Origin": "https://app.example.test",
             "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "content-type",
+            "Access-Control-Request-Headers": "authorization,content-type",
         },
     )
     assert preflight.status_code == 200
     assert "POST" in preflight.headers.get("access-control-allow-methods", "")
+
+    denied = client.options(
+        "/score",
+        headers={
+            "Origin": "https://evil.example.test",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert denied.status_code == 400
+    assert "access-control-allow-origin" not in denied.headers
+
+
+def test_cors_rejects_wildcards():
+    with pytest.raises(RuntimeError, match="wildcard"):
+        replace(ServiceSettings(), cors_origins=("*",)).validate()
+
+    with pytest.raises(RuntimeError, match="path"):
+        replace(
+            ServiceSettings(), cors_origins=("https://app.example.test/",)
+        ).validate()
+
+    for noncanonical in (
+        "https://APP.example.test",
+        "https://app.example.test:443",
+    ):
+        with pytest.raises(RuntimeError, match="canonical"):
+            replace(ServiceSettings(), cors_origins=(noncanonical,)).validate()

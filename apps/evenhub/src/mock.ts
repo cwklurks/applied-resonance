@@ -178,7 +178,12 @@ export async function runMockFromWav(
   const parsed = parseWav(wav)
   const display = opts.display ?? new RecordingDisplay()
   const feed = new WavFileFeed({ sampleRate: parsed.sampleRate, seed: opts.seed })
-  const pipeline = new Pipeline(feed, { ...opts, display })
+  const pipeline = new Pipeline(feed, {
+    maxPendingFrames: 64,
+    maxFrameAgeMs: 120_000,
+    ...opts,
+    display,
+  })
   feed.enqueue(parsed.bytes)
 
   await pipeline.start()

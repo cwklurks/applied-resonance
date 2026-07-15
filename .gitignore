@@ -15,6 +15,7 @@ datakit/data/*
 
 node_modules/
 apps/evenhub/dist/
+apps/evenhub/app.generated.json
 shared/display-card/dist/
 *.ehpk
 killtest_out/
