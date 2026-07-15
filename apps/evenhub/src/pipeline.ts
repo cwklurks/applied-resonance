@@ -60,12 +60,31 @@ export interface PipelineOpts {
   onFrameScored?: () => void
   /** Rolling tap-to-log buffer length in seconds (default 10). */
   ringSeconds?: number
+  /** Frames retained behind the active score request (default 1, latest wins). */
+  maxPendingFrames?: number
+  /** Drop a queued score frame older than this (default 2500 ms). */
+  maxFrameAgeMs?: number
+  /** Raw-capture frames retained behind the active append (default 2). */
+  maxCapturePendingFrames?: number
 }
 
 const FRAME_BYTES = 32000 // 1 s @ 16 kHz s16le
 const OFFLINE_RETRY_MS = 5000
 const LOGGED_HOLD_MS = 2000
 const DEFAULT_RING_SECONDS = 10
+const DEFAULT_MAX_PENDING_FRAMES = 1
+const DEFAULT_MAX_FRAME_AGE_MS = 2500
+const DEFAULT_MAX_CAPTURE_PENDING_FRAMES = 2
+
+interface QueuedFrame {
+  frame: Uint8Array
+  enqueuedAt: number
+}
+
+interface QueuedCaptureFrame {
+  captureId: string
+  frame: Uint8Array
+}
 
 /** Engine wire state → HUD state. Only these four come back from /score. */
 function engineStateToHud(state: string): HudState {
@@ -94,6 +113,9 @@ export class Pipeline {
   private readonly onCaptureEvent?: (event: CaptureEvent) => void
   private readonly onFrameScored?: () => void
   private readonly ringFrames: number
+  private readonly maxPendingFrames: number
+  private readonly maxFrameAgeMs: number
+  private readonly maxCapturePendingFrames: number
 
   private readonly normalizer: AudioNormalizer
   private readonly throttle: HudThrottle
@@ -102,17 +124,15 @@ export class Pipeline {
   private started = false
   private starting = false
 
-  /**
-   * Frames are scored strictly in order, one at a time. The engine session is
-   * stateful (capture buffers chunks in arrival order), and the glasses deliver
-   * ~1 frame/s anyway, so serializing keeps the wire honest and lets mock/test
-   * feeds pump fast without firing dozens of concurrent, out-of-order POSTs.
-   */
-  private scoreChain: Promise<void> = Promise.resolve()
-  private queuedFrames = 0
+  /** One active score request plus a bounded latest-wins pending queue. */
+  private scoreQueue: QueuedFrame[] = []
+  private scoring = false
+  private scoreDrainWaiters: Array<() => void> = []
 
-  /** Raw-capture appends are serialized separately so scoring never waits. */
-  private captureAppendChain: Promise<void> = Promise.resolve()
+  /** Raw-capture appends are serialized in a separate bounded queue. */
+  private captureAppendQueue: QueuedCaptureFrame[] = []
+  private captureAppending = false
+  private captureDrainWaiters: Array<() => void> = []
   private captureId: string | null = null
   private stoppingCaptureId: string | null = null
   private captureSecondsTotal = 0
@@ -125,6 +145,7 @@ export class Pipeline {
   private suppressUntil = 0
 
   private lastEngineState: string | null = null
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(feed: AudioFeed, opts: PipelineOpts) {
     this.feed = feed
@@ -138,22 +159,18 @@ export class Pipeline {
     this.onCaptureEvent = opts.onCaptureEvent
     this.onFrameScored = opts.onFrameScored
     this.ringFrames = Math.max(1, opts.ringSeconds ?? DEFAULT_RING_SECONDS)
+    this.maxPendingFrames = Math.max(1, opts.maxPendingFrames ?? DEFAULT_MAX_PENDING_FRAMES)
+    this.maxFrameAgeMs = Math.max(1, opts.maxFrameAgeMs ?? DEFAULT_MAX_FRAME_AGE_MS)
+    this.maxCapturePendingFrames = Math.max(
+      1,
+      opts.maxCapturePendingFrames ?? DEFAULT_MAX_CAPTURE_PENDING_FRAMES,
+    )
 
     this.throttle = new HudThrottle(2000, this.now)
     this.normalizer = new AudioNormalizer({
       now: this.now,
       onFrame: (frame) => {
-        // The feed delivers frames synchronously; scoring is async. Append each
-        // frame to the serial chain so they are scored strictly in order.
-        this.queuedFrames += 1
-        this.scoreChain = this.scoreChain
-          .then(() => this.onFrameAsync(frame))
-          .catch((err) => {
-            console.error('frame scoring chain error', err)
-          })
-          .finally(() => {
-            this.queuedFrames -= 1
-          })
+        this.enqueueFrame(frame)
       },
     })
   }
@@ -164,16 +181,23 @@ export class Pipeline {
    * silent. Once a session opens, the feed is started exactly once.
    */
   async start(): Promise<void> {
+    if (this.started) return
+    this.started = true
     await this.ensureSession()
-    if (!this.started) {
-      this.started = true
-      this.feed.start((bytes) => this.onChunk(bytes))
-    }
+    if (this.started) this.feed.start((bytes) => this.onChunk(bytes))
   }
 
   stop(): void {
     this.feed.stop()
     this.started = false
+    this.scoreQueue = []
+    this.captureAppendQueue = []
+    this.captureId = null
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer)
+      this.retryTimer = null
+    }
+    this.resolveScoreDrainIfIdle()
   }
 
   /** Forward end-of-stream to the normalizer (mock/test EOF). */
@@ -200,8 +224,8 @@ export class Pipeline {
    * Mock/test only — the live app never needs to wait.
    */
   async drain(): Promise<void> {
-    while (this.queuedFrames > 0) {
-      await this.scoreChain
+    while (this.scoring || this.scoreQueue.length > 0) {
+      await new Promise<void>((resolve) => this.scoreDrainWaiters.push(resolve))
     }
   }
 
@@ -248,7 +272,7 @@ export class Pipeline {
     this.captureId = null
     this.stoppingCaptureId = id
     try {
-      await this.captureAppendChain
+      await this.waitForCaptureDrain(id)
 
       const res = await this.client.captureStop(id)
       if (res.kind !== 'ok') {
@@ -305,6 +329,45 @@ export class Pipeline {
     this.normalizer.push(bytes)
   }
 
+  private enqueueFrame(frame: Uint8Array): void {
+    if (!this.started) return
+    // Keep tap-to-log and raw capture current even while scoring is stalled.
+    this.pushRing(frame)
+    this.queueCaptureAppend(frame)
+
+    if (this.scoreQueue.length >= this.maxPendingFrames) {
+      this.scoreQueue.shift()
+    }
+    this.scoreQueue.push({ frame, enqueuedAt: this.now() })
+    void this.pumpScoreQueue()
+  }
+
+  private async pumpScoreQueue(): Promise<void> {
+    if (this.scoring) return
+    this.scoring = true
+    try {
+      while (this.started && this.scoreQueue.length > 0) {
+        const queued = this.scoreQueue.shift()!
+        if (this.now() - queued.enqueuedAt > this.maxFrameAgeMs) continue
+        try {
+          await this.onFrameAsync(queued.frame)
+        } catch (err) {
+          console.error('frame scoring worker error', err)
+        }
+      }
+    } finally {
+      this.scoring = false
+      this.resolveScoreDrainIfIdle()
+    }
+  }
+
+  private resolveScoreDrainIfIdle(): void {
+    if (this.scoring || this.scoreQueue.length > 0) return
+    const waiters = this.scoreDrainWaiters
+    this.scoreDrainWaiters = []
+    for (const resolve of waiters) resolve()
+  }
+
   private async ensureSession(): Promise<void> {
     if (this.sessionId !== null || this.starting) return
     this.starting = true
@@ -314,6 +377,7 @@ export class Pipeline {
         tag: this.tag,
         rpm: this.rpm,
       })
+      if (!this.started) return
       if (res.kind === 'ok') {
         this.sessionId = res.value.session_id
         // Surface the engine's opening state immediately (capture countdown or
@@ -337,13 +401,14 @@ export class Pipeline {
   }
 
   private scheduleSessionRetry(): void {
-    setTimeout(() => {
-      if (this.sessionId === null) void this.ensureSession()
+    if (this.retryTimer !== null) return
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      if (this.started && this.sessionId === null) void this.ensureSession()
     }, OFFLINE_RETRY_MS)
   }
 
   private async onFrameAsync(frame: Uint8Array): Promise<void> {
-    this.queueCaptureAppend(frame)
     try {
       await this.scoreFrame(frame)
     } finally {
@@ -355,13 +420,61 @@ export class Pipeline {
   private queueCaptureAppend(frame: Uint8Array): void {
     const id = this.captureId
     if (id === null) return
+    if (this.captureAppendQueue.length >= this.maxCapturePendingFrames) {
+      this.captureAppendQueue = this.captureAppendQueue.filter(
+        (queued) => queued.captureId !== id,
+      )
+      this.stoppingCaptureId = id
+      this.stopCaptureTeeAfterAppendFailure(
+        id,
+        'raw capture stopped: append queue limit reached',
+      )
+      this.resolveCaptureDrainIfIdle()
+      return
+    }
+    this.captureAppendQueue.push({ captureId: id, frame })
+    void this.pumpCaptureQueue()
+  }
 
-    this.captureAppendChain = this.captureAppendChain
-      .then(() => this.appendCaptureFrame(id, frame))
-      .catch((err) => {
-        console.error('capture append chain error', err)
-        this.stopCaptureTeeAfterAppendFailure(id, 'raw capture append failed: engine offline')
-      })
+  private async pumpCaptureQueue(): Promise<void> {
+    if (this.captureAppending) return
+    this.captureAppending = true
+    try {
+      while (this.captureAppendQueue.length > 0) {
+        const queued = this.captureAppendQueue.shift()!
+        try {
+          await this.appendCaptureFrame(queued.captureId, queued.frame)
+        } catch (err) {
+          console.error('capture append worker error', err)
+          this.stopCaptureTeeAfterAppendFailure(
+            queued.captureId,
+            'raw capture append failed: engine offline',
+          )
+        }
+      }
+    } finally {
+      this.captureAppending = false
+      if (this.captureAppendFailed && this.stoppingCaptureId !== null) {
+        this.stoppingCaptureId = null
+      }
+      this.resolveCaptureDrainIfIdle()
+    }
+  }
+
+  private async waitForCaptureDrain(captureId: string): Promise<void> {
+    while (
+      this.captureAppending ||
+      this.captureAppendQueue.some((queued) => queued.captureId === captureId)
+    ) {
+      await new Promise<void>((resolve) => this.captureDrainWaiters.push(resolve))
+    }
+  }
+
+  private resolveCaptureDrainIfIdle(): void {
+    if (this.captureAppending || this.captureAppendQueue.length > 0) return
+    const waiters = this.captureDrainWaiters
+    this.captureDrainWaiters = []
+    for (const resolve of waiters) resolve()
   }
 
   private async appendCaptureFrame(
@@ -390,6 +503,8 @@ export class Pipeline {
       return
     }
 
+    if (this.captureId !== captureId && this.stoppingCaptureId !== captureId) return
+
     this.captureSecondsTotal = res.value.seconds_total
     this.onCaptureEvent?.({
       kind: 'append',
@@ -407,7 +522,6 @@ export class Pipeline {
   }
 
   private async scoreFrame(frame: Uint8Array): Promise<void> {
-    this.pushRing(frame)
     // The 1 s frame cadence is our throttle tick. Skip it while a LOGGED card is
     // held so a stale pending card can't flush over the tap acknowledgment.
     if (this.now() >= this.suppressUntil) {
@@ -429,6 +543,7 @@ export class Pipeline {
       this.renderState('OFFLINE')
       return
     }
+    if (!this.started) return
 
     if (res.kind === 'offline') {
       this.renderState('OFFLINE')
@@ -443,6 +558,7 @@ export class Pipeline {
         await this.ensureSession()
         if (this.sessionId !== null) {
           const retry = await this.client.score(this.sessionId, frame)
+          if (!this.started) return
           if (retry.kind === 'ok') {
             this.renderEngine(this.toHudInput(retry.value))
             return

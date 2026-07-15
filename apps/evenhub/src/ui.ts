@@ -8,10 +8,11 @@
  * localStorage so a reload keeps the technician's configuration.
  */
 
+import { ENGINE_ORIGIN } from './config'
+
 export type Mode = 'auto' | 'saved' | 'session'
 
 export interface Settings {
-  engineUrl: string
   tag: string
   rpm: number | null
   mode: Mode
@@ -28,7 +29,6 @@ const STORAGE_KEY = 'earsight.settings.v1'
 const DEFAULT_CAPTURE_TAG = 'g2-characterization'
 
 const DEFAULTS: Settings = {
-  engineUrl: 'http://localhost:8000',
   tag: '',
   rpm: null,
   mode: 'auto',
@@ -53,8 +53,6 @@ export function readSettings(): Settings {
     if (!raw) return { ...DEFAULTS }
     const parsed = JSON.parse(raw) as Partial<Settings>
     return {
-      engineUrl:
-        typeof parsed.engineUrl === 'string' ? parsed.engineUrl : DEFAULTS.engineUrl,
       tag: typeof parsed.tag === 'string' ? parsed.tag : DEFAULTS.tag,
       rpm: typeof parsed.rpm === 'number' ? parsed.rpm : DEFAULTS.rpm,
       mode:
@@ -93,8 +91,8 @@ export function mountUi(): void {
       </section>
 
       <section class="settings">
-        <label>Engine URL
-          <input id="engineUrl" type="url" value="${escapeAttr(s.engineUrl)}" placeholder="http://localhost:8000" />
+        <label>Engine origin
+          <input id="engineUrl" type="url" value="${escapeAttr(ENGINE_ORIGIN)}" readonly />
         </label>
         <label>Baseline tag
           <input id="tag" type="text" value="${escapeAttr(s.tag)}" placeholder="(blank = fresh session)" />
@@ -152,7 +150,6 @@ export function mountUi(): void {
 
   app.querySelector<HTMLButtonElement>('#save')!.addEventListener('click', () => {
     const next: Settings = {
-      engineUrl: app.querySelector<HTMLInputElement>('#engineUrl')!.value.trim(),
       tag: app.querySelector<HTMLInputElement>('#tag')!.value.trim(),
       rpm: parseRpm(app.querySelector<HTMLInputElement>('#rpm')!.value),
       mode: app.querySelector<HTMLSelectElement>('#mode')!.value as Mode,

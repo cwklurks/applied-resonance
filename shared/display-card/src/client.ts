@@ -66,9 +66,10 @@ export interface CaptureStopResponse {
 
 export interface HealthResponse {
   status: string;
-  backend: string;
-  baselines: string[];
-  sessions: number;
+}
+
+export interface BaselineResponse {
+  exists: boolean;
 }
 
 // -------------------------------------------------------------- result ----
@@ -81,15 +82,34 @@ export type EngineResult<T> =
 // -------------------------------------------------------------- client ----
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+const DEFAULT_TIMEOUT_MS = 5_000;
+
+export interface EngineClientOptions {
+  /** Runtime-only secret. Callers must not persist or bundle this value. */
+  bearerToken?: string;
+  /** One deadline covering fetch plus response-body parsing. */
+  timeoutMs?: number;
+}
 
 export class EngineClient {
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
+  private readonly bearerToken?: string;
+  private readonly timeoutMs: number;
 
-  constructor(baseUrl: string, fetchFn: typeof fetch = fetch) {
+  constructor(
+    baseUrl: string,
+    fetchFn: typeof fetch = fetch,
+    options: EngineClientOptions = {},
+  ) {
     // Trim a single trailing slash so `${baseUrl}/health` never doubles up.
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.fetchFn = fetchFn;
+    this.bearerToken = options.bearerToken || undefined;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
+      throw new TypeError("timeoutMs must be a positive finite number");
+    }
   }
 
   startSession(req: StartRequest): Promise<EngineResult<StartResponse>> {
@@ -145,6 +165,12 @@ export class EngineClient {
     return this.request<HealthResponse>("/health", { method: "GET" });
   }
 
+  hasBaseline(tag: string): Promise<EngineResult<BaselineResponse>> {
+    return this.request<BaselineResponse>(`/baselines/${encodeURIComponent(tag)}`, {
+      method: "GET",
+    });
+  }
+
   // ------------------------------------------------------------ internals ----
 
   private postJson<T>(
@@ -162,25 +188,46 @@ export class EngineClient {
     path: string,
     init: RequestInit,
   ): Promise<EngineResult<T>> {
-    let response: Response;
-    try {
-      response = await this.fetchFn(`${this.baseUrl}${path}`, init);
-    } catch {
-      // Network down, DNS failure, CORS rejection, aborted request, etc.
-      return { kind: "offline" };
-    }
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        reject(new Error("engine request deadline exceeded"));
+      }, this.timeoutMs);
+    });
 
-    if (!response.ok) {
-      const detail = await readDetail(response);
-      return { kind: "http_error", status: response.status, detail };
+    let headers = init.headers;
+    if (path !== "/health" && this.bearerToken) {
+      headers = {
+        ...(headers as Record<string, string> | undefined),
+        Authorization: `Bearer ${this.bearerToken}`,
+      };
     }
+    const requestInit: RequestInit = {
+      ...init,
+      ...(headers === undefined ? {} : { headers }),
+      signal: controller.signal,
+    };
 
     try {
-      const value = (await response.json()) as T;
+      const response = await Promise.race([
+        this.fetchFn(`${this.baseUrl}${path}`, requestInit),
+        deadline,
+      ]);
+
+      if (!response.ok) {
+        const detail = await Promise.race([readDetail(response), deadline]);
+        return { kind: "http_error", status: response.status, detail };
+      }
+
+      const value = (await Promise.race([response.json(), deadline])) as T;
       return { kind: "ok", value };
     } catch {
-      // 2xx with an unparseable body is treated as a transport-level failure.
+      // Network/DNS/CORS failures, aborts, and invalid/late bodies are offline.
       return { kind: "offline" };
+    } finally {
+      clearTimeout(timeout!);
     }
   }
 }

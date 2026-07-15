@@ -21,6 +21,7 @@ import { EngineClient, formatHudCard } from '@earsight/display-card'
 import { Pipeline } from './pipeline'
 import { BridgeAudioFeed, BridgeDisplay, HUD_CONTAINER_ID } from './bridge_adapters'
 import { runMockFromWav } from './mock'
+import { ENGINE_ORIGIN, isLoopbackEngineOrigin } from './config'
 import {
   bindCaptureControls,
   mountUi,
@@ -40,29 +41,82 @@ function evidenceFrom(line1: string, line2: string): string | null {
   return idx >= 0 ? line2.slice(0, idx) : line2
 }
 
-const DEFAULT_ENGINE_URL = 'http://localhost:8000'
-
 mountUi()
 
 const settings = readSettings()
-const engineUrl = settings.engineUrl || DEFAULT_ENGINE_URL
+void boot().catch((error) => {
+  setCard('engine offline', 'check phone connection')
+  console.error('startup failed', error)
+})
 
-// ── Mock mode (browser dogfooding): ?mock=<wavUrl> drives the identical
-// pipeline from a WAV instead of the glasses, no bridge required. ──────────
-const mockUrl = new URLSearchParams(location.search).get('mock')
-if (mockUrl) {
-  void runMockMode(mockUrl, engineUrl)
-} else {
-  void runBridgeMode(engineUrl)
+async function boot(): Promise<void> {
+  const bearerToken = await readRuntimeBearerToken(ENGINE_ORIGIN)
+  const client = new EngineClient(ENGINE_ORIGIN, fetch, {
+    bearerToken,
+    timeoutMs: 5000,
+  })
+  pushLog(`runtime engine: ${ENGINE_ORIGIN}`)
+
+  // Mock mode drives the identical pipeline from a WAV instead of the glasses.
+  const mockUrl = new URLSearchParams(location.search).get('mock')
+  if (mockUrl) {
+    await runMockMode(mockUrl, client)
+  } else {
+    await runBridgeMode(client)
+  }
 }
 
-async function runMockMode(wavUrl: string, baseUrl: string): Promise<void> {
+function readRuntimeBearerToken(engineOrigin: string): Promise<string | undefined> {
+  if (isLoopbackEngineOrigin(engineOrigin)) return Promise.resolve(undefined)
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div')
+    overlay.setAttribute('role', 'dialog')
+    overlay.setAttribute('aria-modal', 'true')
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:24px;background:#10110feF'
+
+    const form = document.createElement('form')
+    form.autocomplete = 'off'
+    form.style.cssText =
+      'width:min(420px,100%);display:grid;gap:14px;padding:22px;border:1px solid #6f7669;background:#1a1c18;color:#f4f3ed'
+    const title = document.createElement('strong')
+    title.textContent = 'Connect to secure engine'
+    const detail = document.createElement('span')
+    detail.textContent = `${engineOrigin} · token stays in memory and is requested again after reload`
+    const input = document.createElement('input')
+    input.type = 'password'
+    input.autocomplete = 'off'
+    input.spellcheck = false
+    input.setAttribute('autocapitalize', 'none')
+    input.setAttribute('autocorrect', 'off')
+    input.setAttribute('aria-label', 'Engine bearer token')
+    input.placeholder = 'Bearer token'
+    input.required = true
+    const submit = document.createElement('button')
+    submit.type = 'submit'
+    submit.textContent = 'Connect'
+    form.append(title, detail, input, submit)
+    overlay.append(form)
+    document.body.append(overlay)
+    input.focus()
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault()
+      const token = input.value.trim()
+      input.value = ''
+      overlay.remove()
+      resolve(token || undefined)
+    })
+  })
+}
+
+async function runMockMode(wavUrl: string, client: EngineClient): Promise<void> {
   setBadge('MOCK')
   pushLog(`mock mode: fetching ${wavUrl}`)
   try {
     const res = await fetch(wavUrl)
     const buf = await res.arrayBuffer()
-    const client = new EngineClient(baseUrl)
     const display = {
       render(card: { line1: string; line2: string }) {
         setCard(card.line1, card.line2)
@@ -88,7 +142,7 @@ async function runMockMode(wavUrl: string, baseUrl: string): Promise<void> {
   }
 }
 
-async function runBridgeMode(baseUrl: string): Promise<void> {
+async function runBridgeMode(client: EngineClient): Promise<void> {
   const bridge = await waitForEvenAppBridge()
 
   // Single 576×288 text container, event capture on so taps reach us.
@@ -113,7 +167,6 @@ async function runBridgeMode(baseUrl: string): Promise<void> {
     console.error('Failed to create startup page container', created)
   }
 
-  const client = new EngineClient(baseUrl)
   const bridgeDisplay = new BridgeDisplay(bridge)
 
   // Mirror every card to both the lens and the companion UI.
@@ -129,7 +182,7 @@ async function runBridgeMode(baseUrl: string): Promise<void> {
   // Mode: prefer a saved baseline if the companion settings name a tag that the
   // engine already has; otherwise capture a fresh session baseline.
   const mode = await resolveMode(client, settings.mode, settings.tag)
-  pushLog(`engine ${baseUrl} · mode ${mode} · tag ${settings.tag || '(session)'}`)
+  pushLog(`engine ${ENGINE_ORIGIN} · mode ${mode} · tag ${settings.tag || '(session)'}`)
 
   const feed = new BridgeAudioFeed(bridge)
   const pipeline = new Pipeline(feed, {
@@ -232,8 +285,8 @@ async function runBridgeMode(baseUrl: string): Promise<void> {
 }
 
 /**
- * Decide session vs saved. 'auto' → saved if the engine's /health lists the tag
- * as an existing baseline, else session. Explicit 'saved'/'session' are honored
+ * Decide session vs saved. 'auto' → saved if the protected baseline lookup
+ * confirms the tag, else session. Explicit 'saved'/'session' are honored
  * but 'saved' falls back to 'session' if the tag is missing or the engine is
  * unreachable (so we never open a session that will 404 on every score).
  */
@@ -245,9 +298,9 @@ async function resolveMode(
   if (requested === 'session') return 'session'
   if (!tag) return 'session'
 
-  const health = await client.health()
+  const baseline = await client.hasBaseline(tag)
   const hasBaseline =
-    health.kind === 'ok' && health.value.baselines.includes(tag)
+    baseline.kind === 'ok' && baseline.value.exists
 
   if (requested === 'saved') return hasBaseline ? 'saved' : 'session'
   // auto

@@ -51,6 +51,10 @@ type CaptureAppendImpl = (
   captureId: string,
   pcm: Uint8Array,
 ) => Promise<EngineResult<CaptureAppendResponse>>
+type ScoreImpl = (
+  sessionId: string,
+  pcm: Uint8Array,
+) => Promise<ScoreResult>
 
 /**
  * Scripted EngineClient: `startSession` returns a queue of start results (or a
@@ -69,9 +73,11 @@ class FakeEngineClient {
   captureAppendCalls: CaptureAppendCall[] = []
   captureStopCalls: string[] = []
   captureAppendImpl: CaptureAppendImpl | null = null
+  scoreImpl: ScoreImpl | null = null
+  scoreCalls: { sessionId: string; pcm: Uint8Array }[] = []
   healthResult: EngineResult<HealthResponse> = {
     kind: 'ok',
-    value: { status: 'ok', backend: 'cpu', baselines: [], sessions: 0 },
+    value: { status: 'ok' },
   }
   private startCount = 0
   private captureStartCount = 0
@@ -89,7 +95,9 @@ class FakeEngineClient {
     )
   }
 
-  async score(_sessionId: string, _pcm: Uint8Array): Promise<ScoreResult> {
+  async score(sessionId: string, pcm: Uint8Array): Promise<ScoreResult> {
+    this.scoreCalls.push({ sessionId, pcm: new Uint8Array(pcm) })
+    if (this.scoreImpl) return this.scoreImpl(sessionId, pcm)
     const next = this.scoreScript.shift()
     return next ?? { kind: 'ok', value: listening() }
   }
@@ -404,6 +412,81 @@ describe('Pipeline', () => {
     expect(renderedDuringWindow).toBeLessThanOrEqual(1)
   })
 
+  it('bounds a stalled scoring queue to the active frame plus the latest pending frame', async () => {
+    const fake = new FakeEngineClient()
+    fake.startQueue = [{ kind: 'ok', value: { session_id: 's1', state: 'LISTENING' } }]
+    const feed = new ManualFeed()
+    const pipeline = new Pipeline(feed, {
+      client: asClient(fake),
+      display: new RecordingDisplay(),
+      mode: 'saved',
+      tag: 'pump',
+      maxPendingFrames: 1,
+    })
+    await pipeline.start()
+    await prime(feed, pipeline)
+    fake.scoreCalls = []
+
+    const held = deferred()
+    let first = true
+    fake.scoreImpl = async () => {
+      if (first) {
+        first = false
+        await held.promise
+      }
+      return { kind: 'ok', value: listening() }
+    }
+
+    feed.emit(frame(1))
+    await settleAsyncWork()
+    feed.emit(frame(2))
+    feed.emit(frame(3))
+    feed.emit(frame(4))
+    await settleAsyncWork()
+    expect(fake.scoreCalls.map((call) => call.pcm[0])).toEqual([1])
+
+    held.resolve()
+    await pipeline.drain()
+    expect(fake.scoreCalls.map((call) => call.pcm[0])).toEqual([1, 4])
+  })
+
+  it('drops a pending score frame once it is stale', async () => {
+    const clock = new FakeClock()
+    const fake = new FakeEngineClient()
+    fake.startQueue = [{ kind: 'ok', value: { session_id: 's1', state: 'LISTENING' } }]
+    const feed = new ManualFeed()
+    const pipeline = new Pipeline(feed, {
+      client: asClient(fake),
+      display: new RecordingDisplay(),
+      mode: 'saved',
+      tag: 'pump',
+      now: clock.now,
+      maxPendingFrames: 1,
+      maxFrameAgeMs: 1_000,
+    })
+    await pipeline.start()
+    await prime(feed, pipeline)
+    fake.scoreCalls = []
+
+    const held = deferred()
+    let first = true
+    fake.scoreImpl = async () => {
+      if (first) {
+        first = false
+        await held.promise
+      }
+      return { kind: 'ok', value: listening() }
+    }
+    feed.emit(frame(1))
+    await settleAsyncWork()
+    feed.emit(frame(2))
+    clock.advance(1_001)
+    held.resolve()
+
+    await pipeline.drain()
+    expect(fake.scoreCalls.map((call) => call.pcm[0])).toEqual([1])
+  })
+
   it('startCapture stores the engine capture id', async () => {
     const clock = new FakeClock()
     const fake = new FakeEngineClient()
@@ -497,6 +580,43 @@ describe('Pipeline', () => {
     second.resolve()
     const stopped = await pipeline.stopCapture()
     expect(stopped).toEqual({ wavPath: 'captures/cap-1.wav', durationS: 0 })
+  })
+
+  it('stops raw capture instead of growing an append queue past its bound', async () => {
+    const fake = new FakeEngineClient()
+    const held = deferred()
+    fake.captureAppendImpl = async (captureId, pcm) => {
+      fake.captureAppendCalls.push({ captureId, pcm: new Uint8Array(pcm) })
+      await held.promise
+      return { kind: 'ok', value: { bytes_total: FRAME_BYTES, seconds_total: 1 } }
+    }
+    fake.startQueue = [{ kind: 'ok', value: { session_id: 's1', state: 'LISTENING' } }]
+    const warnings: string[] = []
+    const feed = new ManualFeed()
+    const pipeline = new Pipeline(feed, {
+      client: asClient(fake),
+      display: new RecordingDisplay(),
+      mode: 'session',
+      tag: 'pump',
+      maxCapturePendingFrames: 1,
+      onCaptureEvent: (event) => {
+        if (event.kind === 'warning') warnings.push(event.message)
+      },
+    })
+
+    await pipeline.start()
+    await prime(feed, pipeline)
+    await pipeline.startCapture('bounded')
+    await step(feed, pipeline, 1)
+    await settleAsyncWork()
+    await step(feed, pipeline, 2)
+    await step(feed, pipeline, 3)
+
+    expect(pipeline.capturing).toBe(false)
+    expect(warnings).toEqual(['raw capture stopped: append queue limit reached'])
+    expect(fake.captureAppendCalls.map((call) => call.pcm[0])).toEqual([1])
+    held.resolve()
+    await settleAsyncWork()
   })
 
   it('stopCapture returns the wav path and halts future appends', async () => {

@@ -110,6 +110,10 @@ describe.skipIf(!haveData)('integration: real engine + real MIMII audio', () => 
         onFrameScored: () => {
           vclock += 1000
         },
+        // Accelerated criterion input is finite (~50 frames) but much faster
+        // than live cadence, so retain it in a still-bounded integration queue.
+        maxPendingFrames: 64,
+        maxFrameAgeMs: 120_000,
       })
 
       await pipeline.start()

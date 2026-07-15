@@ -93,9 +93,33 @@ glasses later). The machine-type CNN is **not** in the runtime path
 
 ### Scoring service (FastAPI)
 
+Local development is loopback-only and does not require a token:
+
 ```bash
-uv run uvicorn engine.serve:create_app --factory --port 8000
+EARSIGHT_DEVICE=cpu uv run python -m engine.serve
 ```
+
+`python -m engine.serve` is the supported launcher and always binds a loopback
+IP. Remote clients must arrive through the local HTTPS gateway; the service
+rejects a non-loopback `EARSIGHT_BIND_HOST`. Do not expose a raw HTTP listener
+to the LAN.
+
+For a phone or glasses session, put a trusted HTTPS gateway in front of the
+loopback listener, then enable the remote policy. The CORS value is the exact
+origin hosting the companion WebView, not the engine origin:
+
+```bash
+export EARSIGHT_REMOTE_ACCESS=1
+export EARSIGHT_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export EARSIGHT_CORS_ORIGINS=https://companion.example.com
+export EARSIGHT_BIND_HOST=127.0.0.1
+EARSIGHT_DEVICE=cpu uv run python -m engine.serve
+```
+
+Configure the HTTPS gateway to forward `https://engine.example.com` to
+`http://127.0.0.1:8000`. Keep the generated token only in the engine process
+environment and enter it into the Even Hub companion prompt at runtime; never
+place it in a URL, manifest, Vite variable, source file, or checked-in `.env`.
 
 - `POST /session/start` `{mode: "session"|"saved"|"library", tag, rpm?}` —
   session mode captures the first 30 s as the baseline; saved mode loads a
@@ -103,7 +127,17 @@ uv run uvicorn engine.serve:create_app --factory --port 8000
 - `POST /score` `{session_id, pcm_b64}` (16 kHz mono int16 LE base64) →
   `{state, score, percentile, evidence_line}`.
 - `POST /label` — writes WAV + sidecar JSON to `datakit/data/`.
-- `GET /health`.
+- `POST /capture/start|append|stop` — bounded raw PCM capture finalized as WAV.
+- `GET /baselines/{tag}` — authenticated baseline-existence lookup.
+- `GET /health` — public liveness only: exactly `{"status":"ok"}`.
+
+Every route except `/health` requires `Authorization: Bearer …` in remote mode.
+CORS permits only `GET`/`POST` and `Authorization`/`Content-Type` from the exact
+configured origins. Defaults are bounded to a 3 MiB HTTP body, 2 s score/capture
+chunks, 60 s labels, 8 scoring sessions (120 s idle), and 2 raw captures
+(300 s/16 MiB total, 30 s idle). Expired captures are closed and deleted;
+startup removes non-resumable `.raw`/`.wav.part` files, and WAV finalization
+copies in 64 KiB chunks.
 
 Baselines persist across restarts (`data/baselines/`); sessions do not.
 Backend/device via `EARSIGHT_BACKEND` (`torch`|`onnx`) and `EARSIGHT_DEVICE`.

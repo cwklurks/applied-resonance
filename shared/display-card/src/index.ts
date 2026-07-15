@@ -30,4 +30,6 @@ export {
   type CaptureAppendResponse,
   type CaptureStopResponse,
   type HealthResponse,
+  type BaselineResponse,
+  type EngineClientOptions,
 } from "./client.js";
