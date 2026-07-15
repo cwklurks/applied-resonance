@@ -105,6 +105,70 @@ def test_health_ok_empty_baselines(tmp_path):
     assert r.json() == {"status": "ok"}
 
 
+def test_production_embedder_is_warmed_before_health_is_available(
+    tmp_path, monkeypatch
+):
+    class StartupTrackingEmbedder(FakeEmbedder):
+        def __init__(self):
+            super().__init__()
+            self.batch_sizes = []
+
+        def embed(self, wavs):
+            self.batch_sizes.append(len(wavs))
+            return super().embed(wavs)
+
+    embedder = StartupTrackingEmbedder()
+    constructions = []
+
+    def build_embedder(backend, device):
+        constructions.append((backend, device))
+        return embedder
+
+    monkeypatch.setenv("EARSIGHT_BACKEND", "torch")
+    monkeypatch.setenv("EARSIGHT_DEVICE", "cpu")
+    monkeypatch.setattr("engine.serve.get_embedder", build_embedder)
+    app = create_app(
+        baseline_root=tmp_path / "b",
+        label_dir=tmp_path / "d",
+        capture_root=tmp_path / "c",
+    )
+
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        assert client.get("/health").json() == {"status": "ok"}
+        assert constructions == [("torch", "cpu")]
+        assert embedder.batch_sizes == [1]
+
+        _, final = _run_capture(client, tag="startup-warm")
+        assert final.json()["state"] == "LISTENING"
+        assert embedder.batch_sizes == [1, 28]
+
+
+def test_model_dependent_request_fails_fast_without_lifespan_startup(
+    tmp_path, monkeypatch
+):
+    constructions = []
+
+    def build_embedder(backend, device):
+        constructions.append((backend, device))
+        return FakeEmbedder()
+
+    monkeypatch.setattr("engine.serve.get_embedder", build_embedder)
+    app = create_app(
+        baseline_root=tmp_path / "b",
+        label_dir=tmp_path / "d",
+        capture_root=tmp_path / "c",
+    )
+    client = TestClient(app, client=("127.0.0.1", 50000))
+
+    response = client.post(
+        "/session/start", json={"mode": "session", "tag": "not-ready"}
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "engine model is not ready"}
+    assert constructions == []
+
+
 def test_loopback_mode_rejects_non_loopback_clients(tmp_path):
     client, _ = _client(tmp_path, client_host="192.0.2.10")
     assert client.get("/health").status_code == 200

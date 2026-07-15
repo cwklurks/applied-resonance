@@ -51,6 +51,26 @@ function loadMonoBytes(path: string): Uint8Array {
   return parseWav(u8).bytes
 }
 
+class TimingEngineClient extends EngineClient {
+  readonly scoreTimingsMs: number[] = []
+  transitionRequestMs: number | null = null
+
+  override async score(sessionId: string, pcm: Uint8Array) {
+    const started = performance.now()
+    const result = await super.score(sessionId, pcm)
+    const elapsedMs = performance.now() - started
+    this.scoreTimingsMs.push(elapsedMs)
+    if (
+      result.kind === 'ok' &&
+      result.value.state === 'LISTENING' &&
+      result.value.capture_remaining_s === 0
+    ) {
+      this.transitionRequestMs = elapsedMs
+    }
+    return result
+  }
+}
+
 async function waitForHealth(client: EngineClient, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -63,21 +83,30 @@ async function waitForHealth(client: EngineClient, timeoutMs: number): Promise<v
 
 describe.skipIf(!haveData)('integration: real engine + real MIMII audio', () => {
   let engine: ChildProcess
-  const client = new EngineClient(BASE_URL)
+  let readyMs = 0
+  // Keep this explicit: the criterion run must use the production deadline,
+  // even if the shared client's default ever changes.
+  const client = new TimingEngineClient(BASE_URL, fetch, { timeoutMs: 5_000 })
 
   beforeAll(async () => {
+    const started = performance.now()
     engine = spawn(
       'uv',
       ['run', 'uvicorn', 'engine.serve:create_app', '--factory', '--port', String(PORT)],
       {
         cwd: REPO_ROOT,
-        env: { ...process.env, EARSIGHT_DEVICE: 'cpu' },
+        env: {
+          ...process.env,
+          EARSIGHT_BACKEND: 'torch',
+          EARSIGHT_DEVICE: 'cpu',
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     )
     engine.stdout?.on('data', (d) => process.stdout.write(`[engine] ${d}`))
     engine.stderr?.on('data', (d) => process.stdout.write(`[engine] ${d}`))
     await waitForHealth(client, 120_000)
+    readyMs = performance.now() - started
   }, 180_000)
 
   afterAll(() => {
@@ -132,6 +161,10 @@ describe.skipIf(!haveData)('integration: real engine + real MIMII audio', () => 
           display.cards.map((c, i) => `${i}: ${c.line1} | ${c.line2}`).join('\n') +
           '\n--- STATES ---\n' +
           states.join(' -> ') +
+          '\n--- COLD TIMING ---\n' +
+          `ready=${readyMs.toFixed(1)}ms · ` +
+          `baseline transition=${client.transitionRequestMs?.toFixed(1)}ms · ` +
+          `max score=${Math.max(...client.scoreTimingsMs).toFixed(1)}ms` +
           '\n',
       )
 
@@ -149,6 +182,8 @@ describe.skipIf(!haveData)('integration: real engine + real MIMII audio', () => 
       const listenStateIdx = states.indexOf('LISTENING')
       expect(listenStateIdx, 'expected a LISTENING state').toBeGreaterThanOrEqual(0)
       expect(listenStateIdx).toBeGreaterThan(capStateIdx)
+      expect(client.transitionRequestMs, 'expected a timed baseline transition').not.toBeNull()
+      expect(client.transitionRequestMs!).toBeLessThan(5_000)
 
       // 3) An anomaly card (SUSPECT "?" or ALERT "!") with evidence + tap-to-log.
       const anomaly = display.cards.find(

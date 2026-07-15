@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { Pipeline, type AudioFeed, type DisplayPort } from '../src/pipeline'
+import {
+  Pipeline,
+  type AudioFeed,
+  type CaptureEvent,
+  type DisplayPort,
+} from '../src/pipeline'
 import type { HudCard } from '@earsight/display-card'
 import type {
   EngineClient,
@@ -582,16 +587,16 @@ describe('Pipeline', () => {
     expect(stopped).toEqual({ wavPath: 'captures/cap-1.wav', durationS: 0 })
   })
 
-  it('stops raw capture instead of growing an append queue past its bound', async () => {
+  it('finalizes a partial capture after an overflow once the active append settles', async () => {
     const fake = new FakeEngineClient()
     const held = deferred()
     fake.captureAppendImpl = async (captureId, pcm) => {
       fake.captureAppendCalls.push({ captureId, pcm: new Uint8Array(pcm) })
       await held.promise
-      return { kind: 'ok', value: { bytes_total: FRAME_BYTES, seconds_total: 1 } }
+      return { kind: 'offline' }
     }
     fake.startQueue = [{ kind: 'ok', value: { session_id: 's1', state: 'LISTENING' } }]
-    const warnings: string[] = []
+    const events: CaptureEvent[] = []
     const feed = new ManualFeed()
     const pipeline = new Pipeline(feed, {
       client: asClient(fake),
@@ -599,9 +604,7 @@ describe('Pipeline', () => {
       mode: 'session',
       tag: 'pump',
       maxCapturePendingFrames: 1,
-      onCaptureEvent: (event) => {
-        if (event.kind === 'warning') warnings.push(event.message)
-      },
+      onCaptureEvent: (event) => events.push(event),
     })
 
     await pipeline.start()
@@ -613,10 +616,31 @@ describe('Pipeline', () => {
     await step(feed, pipeline, 3)
 
     expect(pipeline.capturing).toBe(false)
-    expect(warnings).toEqual(['raw capture stopped: append queue limit reached'])
+    expect(events).toContainEqual({
+      kind: 'warning',
+      message: 'raw capture stopping early: append queue limit reached',
+    })
     expect(fake.captureAppendCalls.map((call) => call.pcm[0])).toEqual([1])
+    expect(fake.captureStopCalls).toEqual([])
+
     held.resolve()
     await settleAsyncWork()
+
+    expect(fake.captureStopCalls).toEqual(['cap-1'])
+    expect(events).toContainEqual({
+      kind: 'warning',
+      message: 'raw capture finalized partial recording: captures/cap-1.wav',
+    })
+    expect(events).toContainEqual({
+      kind: 'stopped',
+      wavPath: 'captures/cap-1.wav',
+      durationS: 0,
+    })
+    expect(await pipeline.startCapture('after-overflow')).toBe('cap-2')
+
+    pipeline.stop()
+    await settleAsyncWork()
+    expect(fake.captureStopCalls).toEqual(['cap-1'])
   })
 
   it('stopCapture returns the wav path and halts future appends', async () => {
@@ -640,13 +664,11 @@ describe('Pipeline', () => {
     expect(fake.captureStopCalls).toEqual(['cap-1'])
   })
 
-  it('append failure warns once and stops teeing', async () => {
+  it('falls back to server idle cleanup when append and cleanup are offline', async () => {
     const clock = new FakeClock()
     const fake = new FakeEngineClient()
-    fake.captureAppendResults = [
-      { kind: 'http_error', status: 404, detail: 'unknown capture_id' },
-      { kind: 'ok', value: { bytes_total: FRAME_BYTES, seconds_total: 1 } },
-    ]
+    fake.captureAppendResults = [{ kind: 'offline' }]
+    fake.captureStopQueue = [{ kind: 'offline' }]
     const warnings: string[] = []
     const feed = new ManualFeed()
     const display = new RecordingDisplay()
@@ -672,7 +694,15 @@ describe('Pipeline', () => {
     await settleAsyncWork()
 
     expect(fake.captureAppendCalls.length).toBe(1)
-    expect(warnings).toEqual(['raw capture append failed: 404 unknown capture_id'])
+    expect(warnings).toEqual([
+      'raw capture append failed: engine offline',
+      'raw capture cleanup failed: engine offline; server idle cleanup pending',
+    ])
+    expect(fake.captureStopCalls).toEqual(['cap-1'])
+
+    pipeline.stop()
+    await settleAsyncWork()
+    expect(fake.captureStopCalls).toEqual(['cap-1'])
   })
 
   it('keeps scoring flow unaffected while raw capture is active', async () => {
