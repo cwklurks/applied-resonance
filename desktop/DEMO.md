@@ -1,4 +1,4 @@
-# EarSight desktop demo — 60-second video script
+# Applied Resonance desktop demo — 60-second video script
 
 A hands-free acoustic-diagnostics demo, staged honestly but visibly: capture a
 healthy baseline on a running machine, induce a real, audible fault, and watch
@@ -38,7 +38,7 @@ App under test: `uv run streamlit run desktop/app.py`
 
 | t (s) | shot | action | what's on screen |
 |------:|------|--------|------------------|
-| 0–4   | Title / wide | Laptop facing a running box fan; cursor on the **Monitor** toggle. | App title "🎧 EarSight — live acoustic-anomaly monitor"; sidebar setup; quiet placeholder ("Turn on Monitor…"). |
+| 0–4   | Title / wide | Laptop facing a running box fan; cursor on the **Monitor** toggle. | App title "🎧 Applied Resonance — live acoustic-anomaly monitor"; sidebar setup; quiet placeholder ("Turn on Monitor…"). |
 | 4–8   | Sidebar | Toggle **Monitor (open mic)** on. Spectrogram begins scrolling. | Rolling 10 s log-mel spectrogram comes alive; state badge reads **🟢 LISTENING**; percentile near 0. |
 | 8–14  | Setup | Confirm **Baseline tag** = `bench-unit`, set **RPM** if known (else 0). Click **Capture baseline (30 s)**. | Progress bar: "30s remaining — keep the machine sounding NORMAL". |
 | 14–24 | Baseline (sped up) | Let the 30 s baseline capture run on the **healthy** fan. (Speed this segment up 3–4× in edit; narrate "this is what healthy sounds like.") | Countdown ticks down; toast "Baseline 'bench-unit' fitted from 28 windows ✅". State settles at **🟢 LISTENING**, percentile low. |
@@ -47,7 +47,7 @@ App under test: `uv run streamlit run desktop/app.py`
 | 36–42 | Meter (hold) | Keep the fault running; the streak builds. | Badge flips **🟡 SUSPECT → 🔴 ALERT** (red); gauge near full. |
 | 42–48 | Evidence | Push in on the evidence line. | Big subheader, e.g. "⚠ impulse train ~88 Hz, low-band energy up"; expand "Full evidence" to flash the JSON (mel bands, envelope peaks, nearest baseline). |
 | 48–56 | Record & label | Scroll to **Record & label**; pick machine type **fan**, type fault "blade imbalance", add a note, click **Save last 10 s clip**. | Form fills; success banner "Saved clip → …/datakit/data/…wav". (This is the data-moat moment — every demo feeds the dataset.) |
-| 56–60 | End card | Remove the coin; meter relaxes back toward **LISTENING**. Cut to end card. | End card: "EarSight — hands-free acoustic diagnostics for techs. Baseline in 30 s. Anomalies with evidence. Glasses-native, built glasses-free." |
+| 56–60 | End card | Remove the coin; meter relaxes back toward **LISTENING**. Cut to end card. | End card: "Applied Resonance — hands-free acoustic diagnostics for techs. Baseline in 30 s. Anomalies with evidence. Glasses-native, built glasses-free." |
 
 ---
 
