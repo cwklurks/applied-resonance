@@ -42,9 +42,11 @@ function isFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-/** Render the `· N%` suffix (rounded) when percentile is a finite number. */
+/** Render an explicit percentile suffix so it is not mistaken for confidence. */
 function percentSuffix(percentile: number | null | undefined): string {
-  return isFiniteNumber(percentile) ? ` · ${Math.round(percentile)}%` : "";
+  return isFiniteNumber(percentile)
+    ? ` · percentile ${Math.round(percentile)}`
+    : "";
 }
 
 /**
@@ -88,7 +90,7 @@ export function formatHudCard(input: HudInput): HudCard {
       break;
     }
     case "ALERT": {
-      line1 = `! Bearing-like anomaly${percentSuffix(percentile)}`;
+      line1 = `! Strong acoustic change${percentSuffix(percentile)}`;
       line2 = anomalyLine2(evidenceLine);
       break;
     }

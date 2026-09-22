@@ -1,4 +1,4 @@
-"""One-command smoke test for the EarSight Phase 0 pipeline.
+"""One-command smoke test for the Applied Resonance Phase 0 pipeline.
 
 Runs the full baseline end-to-end, in-process, on CPU::
 
@@ -93,7 +93,7 @@ def run(subset: int, device: str, budget_s: float, seed: int) -> int:
 
 
 def _print_timings(timings: dict[str, float], total: float) -> None:
-    print("\n=== EarSight smoke — stage timings ===")
+    print("\n=== Applied Resonance smoke — stage timings ===")
     print(f"  {'stage':<10} {'seconds':>10}")
     for stage in ("download", "eval", "verify"):
         if stage in timings:
@@ -103,7 +103,7 @@ def _print_timings(timings: dict[str, float], total: float) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the EarSight Phase 0 pipeline end-to-end as a smoke test."
+        description="Run the Applied Resonance Phase 0 pipeline end-to-end as a smoke test."
     )
     parser.add_argument("--subset", type=int, default=50)
     parser.add_argument(

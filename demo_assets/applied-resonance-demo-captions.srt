@@ -1,0 +1,74 @@
+1
+00:00:07,000 --> 00:00:11,200
+Applied Resonance starts with a simple idea:
+
+2
+00:00:11,200 --> 00:00:17,500
+Before you can notice that a machine sounds wrong,
+you have to learn what normal sounds like.
+
+3
+00:00:17,500 --> 00:00:23,500
+Here, the real G2 microphone listens to a normal pump
+for thirty seconds and builds a baseline.
+
+4
+00:00:23,500 --> 00:00:26,000
+The system stays in LISTENING.
+
+5
+00:00:26,000 --> 00:00:34,500
+When playback changes to an abnormal recording from
+the same pump at the same volume, the change persists...
+
+6
+00:00:34,500 --> 00:00:38,000
+and an alert appears on the glasses.
+
+7
+00:00:38,000 --> 00:00:42,500
+I tap the temple once, and it saves the previous
+ten seconds as evidence.
+
+8
+00:00:42,500 --> 00:00:47,500
+When the normal sound returns,
+it goes back to LISTENING.
+
+9
+00:00:47,500 --> 00:00:50,500
+That recovery matters because
+this is not just a one-way tripwire.
+
+10
+00:00:50,500 --> 00:00:55,500
+I also wanted to know whether the detector actually worked
+beyond a good-looking demo.
+
+11
+00:00:55,500 --> 00:01:04,000
+I tested it on 9,755 industrial recordings from DCASE,
+a standard benchmark for unusual machine sounds.
+
+12
+00:01:04,000 --> 00:01:18,500
+It reached an AUC of 0.693 on fans and 0.880 on pumps,
+above the published DCASE2020 reference baselines.
+
+13
+00:01:18,500 --> 00:01:24,000
+Six months ago, I had never built for wearable hardware.
+
+14
+00:01:24,000 --> 00:01:32,000
+Now I have a working loop from glasses, to phone,
+to model, and back to the display.
+
+15
+00:01:32,000 --> 00:01:35,500
+That is what I am proudest of.
+
+16
+00:01:35,500 --> 00:01:39,000
+I followed one question from my boxing gym
+all the way to a real prototype.

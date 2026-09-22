@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect width="1920" height="1080" fill="#070A10"/>
+
+  <g transform="translate(96 74)">
+    <circle cx="48" cy="48" r="36" fill="none" stroke="#F7F8FA" stroke-width="6"/>
+    <path d="M12 48 C28 26 39 26 60 48 S92 70 84 48" fill="none" stroke="#F7F8FA" stroke-width="6" stroke-linecap="round"/>
+    <text x="108" y="61" fill="#F7F8FA" font-family="Geist, Arial, sans-serif" font-size="36" font-weight="700" letter-spacing="3">APPLIED RESONANCE</text>
+  </g>
+
+  <text x="96" y="248" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500" letter-spacing="3.5">DCASE INDUSTRIAL AUDIO BENCHMARK</text>
+  <text x="96" y="332" fill="#F7F8FA" font-family="Geist, Arial, sans-serif" font-size="80" font-weight="700">Tested on 9,755 recordings.</text>
+  <text x="96" y="388" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="30" font-weight="400">AUC measures how reliably the detector ranks abnormal audio above normal audio. Higher is better.</text>
+
+  <g transform="translate(96 470)">
+    <rect width="820" height="360" rx="16" fill="#101722" stroke="#283242" stroke-width="2"/>
+    <text x="44" y="67" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500" letter-spacing="3.5">FAN</text>
+    <text x="44" y="175" fill="#F7F8FA" font-family="Geist, Arial, sans-serif" font-size="104" font-weight="700">0.693</text>
+    <text x="429" y="170" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="34" font-weight="500">vs 0.658 reference</text>
+    <rect x="44" y="240" width="696" height="22" rx="11" fill="#273142"/>
+    <rect x="44" y="240" width="482" height="22" rx="11" fill="#39FF55"/>
+    <line x1="502" y1="223" x2="502" y2="280" stroke="#F7F8FA" stroke-width="3"/>
+    <text x="44" y="316" fill="#39FF55" font-family="Geist, Arial, sans-serif" font-size="25" font-weight="500">+0.035 AUC</text>
+    <text x="602" y="316" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="22" font-weight="400">DCASE2020</text>
+  </g>
+
+  <g transform="translate(1004 470)">
+    <rect width="820" height="360" rx="16" fill="#101722" stroke="#283242" stroke-width="2"/>
+    <text x="44" y="67" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500" letter-spacing="3.5">PUMP</text>
+    <text x="44" y="175" fill="#F7F8FA" font-family="Geist, Arial, sans-serif" font-size="104" font-weight="700">0.880</text>
+    <text x="429" y="170" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="34" font-weight="500">vs 0.729 reference</text>
+    <rect x="44" y="240" width="696" height="22" rx="11" fill="#273142"/>
+    <rect x="44" y="240" width="612" height="22" rx="11" fill="#39FF55"/>
+    <line x1="551" y1="223" x2="551" y2="280" stroke="#F7F8FA" stroke-width="3"/>
+    <text x="44" y="316" fill="#39FF55" font-family="Geist, Arial, sans-serif" font-size="25" font-weight="500">+0.151 AUC</text>
+    <text x="602" y="316" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="22" font-weight="400">DCASE2020</text>
+  </g>
+
+  <line x1="96" y1="916" x2="1824" y2="916" stroke="#273142" stroke-width="2"/>
+  <text x="96" y="978" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500">Controlled benchmark evaluation</text>
+  <text x="1824" y="978" text-anchor="end" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500">DCASE2020 reference baseline</text>
+</svg>
