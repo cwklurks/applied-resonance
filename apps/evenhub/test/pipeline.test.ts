@@ -281,7 +281,7 @@ describe('Pipeline', () => {
     await step(feed, pipeline)
     const suspectCard = display.last!
     expect(suspectCard.line1.startsWith('?')).toBe(true)
-    expect(suspectCard.line1).toContain('88%')
+    expect(suspectCard.line1).toContain('percentile 88')
     expect(suspectCard.line2).toContain('tonal 120Hz')
     expect(suspectCard.line2).toContain('tap to log')
 
@@ -290,7 +290,7 @@ describe('Pipeline', () => {
     await step(feed, pipeline)
     const alertCard = display.last!
     expect(alertCard.line1.startsWith('!')).toBe(true)
-    expect(alertCard.line1).toContain('97%')
+    expect(alertCard.line1).toContain('percentile 97')
     expect(alertCard.line2).toContain('bearing 3.2x')
     expect(alertCard.line2).toContain('tap to log')
   })

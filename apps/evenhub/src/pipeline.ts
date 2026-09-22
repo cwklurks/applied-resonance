@@ -1,7 +1,7 @@
 /**
  * Bridge-agnostic anomaly-monitoring pipeline.
  *
- * This is the heart of EarSight on the glasses, deliberately decoupled from the
+ * This is the heart of Applied Resonance on the glasses, deliberately decoupled from the
  * Even Hub SDK so the exact same code path drives:
  *   - the live glasses app (main.ts wires a BridgeAudioFeed + BridgeDisplay),
  *   - headless mock mode (mock.ts wires a WavFileFeed + a recording display),

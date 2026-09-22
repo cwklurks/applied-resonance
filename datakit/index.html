@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#101214" />
+    <link rel="icon" href="data:," />
+    <title>Applied Resonance Field Recorder</title>
+  </head>
+  <body>
+    <main id="app" class="shell">
+      <header class="topbar">
+        <div>
+          <p class="kicker">Applied Resonance</p>
+          <h1>Field recorder</h1>
+        </div>
+        <div id="queueCount" class="queue" aria-live="polite">Queue 0</div>
+      </header>
+
+      <section class="recording" aria-labelledby="recordTitle">
+        <div class="status-row">
+          <h2 id="recordTitle">Machine audio</h2>
+          <span id="recordTime" class="time">00:00</span>
+        </div>
+
+        <button id="recordButton" class="record-button" type="button" aria-pressed="false">
+          <span id="recordButtonText">Record</span>
+        </button>
+
+        <div class="meter-wrap" aria-label="Live input level">
+          <div id="meterBar" class="meter-bar"></div>
+          <div id="clipFlag" class="clip-flag">CLIP</div>
+        </div>
+
+        <p id="statusText" class="status" aria-live="polite">Ready</p>
+      </section>
+
+      <form id="labelForm" class="label-form" autocomplete="off">
+        <fieldset id="formFields" disabled>
+          <label>
+            <span>Machine type</span>
+            <select id="machineType" name="machineType" required>
+              <option value="furnace">furnace</option>
+              <option value="AC condenser">AC condenser</option>
+              <option value="compressor">compressor</option>
+              <option value="pump">pump</option>
+              <option value="fan">fan</option>
+              <option value="other">other</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Condition</span>
+            <select id="condition" name="condition" required>
+              <option value="sounds normal">sounds normal</option>
+              <option value="suspected issue">suspected issue</option>
+              <option value="confirmed issue">confirmed issue</option>
+            </select>
+          </label>
+
+          <label>
+            <span>SITE/MACHINE TAG</span>
+            <input id="siteTag" name="siteTag" type="text" required inputmode="text" />
+          </label>
+
+          <label class="check-row">
+            <input id="containsSpeech" name="containsSpeech" type="checkbox" />
+            <span>Contains speech</span>
+          </label>
+
+          <label>
+            <span>Note</span>
+            <textarea id="note" name="note" rows="3"></textarea>
+          </label>
+
+          <button id="saveButton" class="save-button" type="submit">Save clip</button>
+        </fieldset>
+      </form>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

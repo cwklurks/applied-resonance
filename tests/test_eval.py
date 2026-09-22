@@ -183,7 +183,7 @@ def test_render_report_contains_tables_and_type_average():
     )
 
     # Header / table headers present.
-    assert "# EarSight Baseline Report" in report
+    assert "# Applied Resonance Baseline Report" in report
     assert "## Anomaly detection — AUC / pAUC (p=0.1)" in report
     assert "| machine | id | n_train | n_test (norm/abn) | kNN AUC | kNN pAUC |" in report
     # A type-average row.

@@ -1,6 +1,27 @@
-# EarSight — Phase 0: MIMII acoustic-anomaly baseline
+<p align="left">
+  <img src="brand%20images/applied-resonance-horizontal.svg" alt="Applied Resonance" width="440">
+</p>
 
-EarSight asks whether machine-fault audio classification survives a consumer-microphone capture chain. Phase 0 builds the baseline half of that kill test: anomaly detection on MIMII fan and pump recordings using PANNs CNN14 embeddings scored with per-id kNN and Mahalanobis distance, plus a small log-mel CNN that classifies machine type, evaluated with AUC / pAUC against the published DCASE2020 baselines. It also ships a re-record kit (`killtest/`) that generates a playback playlist, segments a single re-recorded WAV back into clips, and overlays shop noise at fixed SNRs, so the same eval can later run on consumer-mic audio.
+# EarSight / Applied Resonance
+
+EarSight is working toward a machine-health pilot for small shops. The pilot
+product direction is a box with SMS/email alerts, a weekly plain-language report,
+and a phone status page. Hybrid microphone and MEMS-accelerometer sensing is
+incoming Wave 1 work; the accelerometer path does not yet exist. Smart glasses
+are a demo interface and long-term vision, not the pilot product.
+
+The project deliberately separates readiness levels:
+
+- **Implemented:** code exists and its scoped tests have passed.
+- **Verified:** independently checked against the target environment or published protocol.
+- **Deployed:** running for a real pilot host.
+
+Current evidence and open gates are summarized in [`STATUS.md`](STATUS.md). Project
+ground truth is [`EARSIGHT_CONTEXT.md`](EARSIGHT_CONTEXT.md).
+
+## Acoustic engine foundation
+
+Applied Resonance asks whether machine-fault audio classification survives a consumer-microphone capture chain. Phase 0 builds the baseline half of that kill test: anomaly detection on MIMII fan and pump recordings using PANNs CNN14 embeddings scored with per-id kNN and Mahalanobis distance, plus a small log-mel CNN that classifies machine type, evaluated with AUC / pAUC against the published DCASE2020 baselines. It also ships a re-record kit (`killtest/`) that generates a playback playlist, segments a single re-recorded WAV back into clips, and overlays shop noise at fixed SNRs, so the same eval can later run on consumer-mic audio.
 
 This repository is `uv`-managed and pinned to Python 3.12.
 
@@ -142,6 +163,74 @@ copies in 64 KiB chunks.
 Baselines persist across restarts (`data/baselines/`); sessions do not.
 Backend/device via `EARSIGHT_BACKEND` (`torch`|`onnx`) and `EARSIGHT_DEVICE`.
 
+### Mobile field recorder (`datakit/`)
+
+The phone recorder is a plain TypeScript + Vite single-page app for collecting
+labeled machine audio in the field. It records through the browser microphone,
+resamples to 16 kHz mono PCM, posts to the engine's `/label` endpoint, and keeps
+failed uploads in IndexedDB until the service is reachable again.
+
+Laptop-only development keeps both the engine and recorder on loopback:
+
+```bash
+uv run python -m engine.serve
+npm --prefix datakit install
+npm --prefix datakit run dev -- --host 127.0.0.1
+```
+
+The Vite dev server proxies `/label` to the loopback FastAPI service, so saved
+clips still land in `datakit/data/` as a
+16 kHz WAV plus JSON sidecar. The form captures machine type, condition,
+`SITE/MACHINE TAG`, contains-speech, and note. The site/machine tag is the key
+used by the saved-baseline registry, so use the same tag the engine should
+recognize later.
+
+The existing `npm run qr` LAN recorder path is not a secure remote deployment:
+it uses plain HTTP and does not have a runtime bearer-token flow. Do not use it
+for field collection. A phone recorder deployment still requires a trusted
+HTTPS origin plus runtime (non-persisted) credential handling; that is a manual
+gate, not software proof in this repository.
+
+Build and test:
+
+```bash
+npm --prefix datakit run build
+npm --prefix datakit run test
+npm --prefix datakit run test:viewport
+npm --prefix datakit run test:real-save
+```
+
+Generate a markdown ingest report:
+
+```bash
+uv run python -m datakit.report
+uv run python -m datakit.report --out datakit/INGEST_REPORT.md
+```
+
+The report summarizes clips by machine type, condition, and site/machine tag,
+total minutes, and flags clips under 3 seconds or clipped at the input.
+
+#### Field etiquette & privacy
+
+Ask the shop owner or site lead before recording. Do not record around active
+conversations when you can avoid it; reposition, wait, or stop the recording if
+voices are present. If a clip contains voices, mark `Contains speech` before
+saving. Sidecars with `contains_speech: true` are excluded from any public
+dataset or demo by default.
+
+#### Mobile verification checklist
+
+- Headless check: `npm --prefix datakit run test:viewport` runs 375 px layouts
+  against mobile Safari and Android Chrome device profiles.
+- iOS Safari manual check: start both servers, scan the QR code with an iPhone
+  on the same WiFi, grant microphone access, record a short clip, confirm the
+  meter moves and shows `CLIP` on overload, save a labeled clip, then confirm a
+  new WAV and JSON sidecar appear under `datakit/data/`.
+- Android Chrome manual check: repeat the same QR, mic, record, clipping,
+  save, and sidecar check on an Android phone.
+- Offline queue check: stop the engine service before saving, confirm the queue
+  count increases, restart the service, and confirm the queue returns to 0.
+
 ### Desktop demo (Streamlit)
 
 ```bash
@@ -197,9 +286,9 @@ uv run python -m killtest.eval_rerun --label rerecorded_macmic \
   --clip-root killtest_out/segmented --device cpu
 ```
 
-## Glasses app (Even Hub)
+## Demo interface: Even Hub glasses app
 
-The first glasses shell lives in [`apps/evenhub/`](apps/evenhub/README.md) — an
+The glasses demo shell lives in [`apps/evenhub/`](apps/evenhub/README.md) — an
 Even Hub WebView app (official asr template lineage) that streams glasses-mic
 PCM to the FastAPI service and renders the two-line HUD contract (≤1 push per
 2 s). Shared lens formatting + the typed engine client live in
@@ -222,7 +311,7 @@ uv run pytest
 
 ```
 earsight/
-  shared/audio_source.py   # AudioSource seam: FileSource, MicSource (glasses later)
+  shared/audio_source.py   # AudioSource seam: FileSource and MicSource
   engine/
     download.py            # MIMII download (full + subset modes)
     audio.py               # WAV I/O (channel-0, 16 kHz)

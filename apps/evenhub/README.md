@@ -1,7 +1,7 @@
-# EarSight — Even Hub glasses app
+# Applied Resonance — Even Hub glasses app
 
-The on-glasses shell for EarSight. The glasses are a **thin client**: they
-capture mic audio, stream it to the EarSight engine for anomaly scoring, and
+The on-glasses shell for Applied Resonance. The glasses are a **thin client**: they
+capture mic audio, stream it to the Applied Resonance engine for anomaly scoring, and
 render the engine's verdict as a two-line HUD card on the G2 lens. All the
 thinking (baseline modeling, scoring, evidence) lives in the engine — this app
 owns only the lens lifecycle, the mic, the taps, and the companion phone view.
@@ -47,7 +47,7 @@ AudioFeed → AudioNormalizer → 1 s frames → EngineClient.score → formatHu
 ## Prereqs
 
 - **Node 20+**.
-- **The EarSight engine running** on `http://localhost:8000`. From the **repo
+- **The Applied Resonance engine running** on `http://localhost:8000`. From the **repo
   root** (`/…/earsight`):
 
   ```bash

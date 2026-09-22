@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>EarSight evidence &mdash; benchmark, method, and open gates</title>
+  <meta name="description" content="Verified EarSight benchmark results, reproducibility method, honest negative result, and the hardware gates that remain open.">
+  <meta property="og:title" content="EarSight evidence">
+  <meta property="og:description" content="9,755 clips. Exact DCASE baseline comparisons. Verified work separated from planned work.">
+  <meta name="theme-color" content="#0b1220">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0b1220;
+      --ink-soft: #1d2637;
+      --paper: #fbfaf7;
+      --surface: #f0eee8;
+      --muted: #525b69;
+      --rule: #d7d4cc;
+      --accent: #c8552d;
+      --accent-dark: #9f3e1e;
+      --good: #176b4d;
+      --warn: #8a4b08;
+      --max: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+
+    .wrap { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
+
+    nav {
+      border-bottom: 1px solid rgba(255,255,255,.14);
+      color: white;
+      background: var(--ink);
+    }
+    .nav-inner {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .14em;
+    }
+    .brand svg { width: 25px; height: 25px; }
+    .nav-links { display: flex; align-items: center; gap: 24px; }
+    .nav-links a {
+      color: rgba(255,255,255,.78);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .nav-links a:hover { color: white; }
+
+    .hero {
+      color: white;
+      background: var(--ink);
+      padding: clamp(72px, 10vw, 132px) 0 clamp(64px, 8vw, 104px);
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr);
+      align-items: end;
+      gap: clamp(48px, 8vw, 104px);
+    }
+    .stamp {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0 0 26px;
+      color: rgba(255,255,255,.72);
+      font-size: 13px;
+    }
+    .stamp::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #62d3a5;
+      box-shadow: 0 0 0 5px rgba(98,211,165,.12);
+    }
+    h1, h2, h3 { margin-top: 0; text-wrap: balance; }
+    h1 {
+      max-width: 13ch;
+      margin-bottom: 28px;
+      font-size: clamp(48px, 7.5vw, 88px);
+      font-weight: 400;
+      line-height: .98;
+      letter-spacing: -.035em;
+    }
+    .hero-copy {
+      max-width: 63ch;
+      margin: 0;
+      color: rgba(255,255,255,.72);
+      font-size: clamp(17px, 2vw, 21px);
+      text-wrap: pretty;
+    }
+    .signal {
+      width: 100%;
+      height: auto;
+      padding-bottom: 24px;
+      border-bottom: 1px solid rgba(255,255,255,.22);
+    }
+    .signal-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 16px;
+      color: rgba(255,255,255,.56);
+      font-size: 12px;
+    }
+
+    .proof-strip {
+      color: white;
+      background: var(--accent-dark);
+    }
+    .proof-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .proof-item {
+      padding: 24px 28px;
+      border-right: 1px solid rgba(255,255,255,.22);
+    }
+    .proof-item:first-child { padding-left: 0; }
+    .proof-item:last-child { border-right: 0; }
+    .proof-item strong { display: block; font-size: 24px; font-weight: 600; }
+    .proof-item span { color: rgba(255,255,255,.78); font-size: 13px; }
+
+    main section { padding: clamp(72px, 9vw, 112px) 0; }
+    main section + section { border-top: 1px solid var(--rule); }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, .7fr);
+      gap: 48px;
+      align-items: end;
+      margin-bottom: 54px;
+    }
+    h2 {
+      margin-bottom: 0;
+      font-size: clamp(34px, 5vw, 58px);
+      font-weight: 400;
+      line-height: 1.03;
+      letter-spacing: -.03em;
+    }
+    .section-head p {
+      max-width: 62ch;
+      margin: 0;
+      color: var(--muted);
+      text-wrap: pretty;
+    }
+
+    .benchmark { border-top: 1px solid var(--ink); }
+    .benchmark-row {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr) 104px;
+      gap: 28px;
+      align-items: center;
+      padding: 30px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .machine { font-size: 21px; font-weight: 600; }
+    .bar-stack { display: grid; gap: 10px; }
+    .bar-line {
+      display: grid;
+      grid-template-columns: 62px minmax(0, 1fr) 56px;
+      gap: 12px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .bar-line strong { color: var(--ink); text-align: right; }
+    .track { height: 11px; background: #dedbd3; overflow: hidden; }
+    .fill { width: var(--score); height: 100%; background: var(--accent); }
+    .baseline .fill { background: #9299a3; }
+    .delta { text-align: right; color: var(--good); font-weight: 600; }
+
+    .method-grid,
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: clamp(40px, 7vw, 88px);
+    }
+    .method-list,
+    .status-list { margin: 0; padding: 0; list-style: none; }
+    .method-list li,
+    .status-list li {
+      position: relative;
+      padding: 16px 0 16px 30px;
+      border-bottom: 1px solid var(--rule);
+      color: var(--ink-soft);
+    }
+    .method-list li::before,
+    .status-list li::before {
+      position: absolute;
+      left: 0;
+      top: 17px;
+      font-weight: 700;
+    }
+    .method-list li::before { content: "\2192"; color: var(--accent); }
+    .verified li::before { content: "\2713"; color: var(--good); }
+    .open li::before { content: "\25CB"; color: var(--warn); }
+    h3 { margin-bottom: 12px; font-size: 24px; font-weight: 600; }
+    .subhead { color: var(--muted); margin: 0 0 14px; }
+
+    .negative {
+      color: white;
+      background: var(--accent-dark);
+    }
+    .negative .wrap {
+      display: grid;
+      grid-template-columns: .65fr 1.35fr;
+      gap: clamp(44px, 8vw, 96px);
+      align-items: start;
+    }
+    .negative h2 { max-width: 9ch; }
+    .negative-copy { max-width: 67ch; }
+    .negative-copy p { margin-top: 0; color: rgba(255,255,255,.82); font-size: 18px; }
+    .negative-copy strong { color: white; }
+
+    .pivot {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, .72fr);
+      gap: clamp(48px, 9vw, 112px);
+      align-items: start;
+    }
+    .pivot-copy { max-width: 65ch; color: var(--muted); font-size: 18px; }
+    .pilot-spec {
+      margin: 0;
+      padding: 0;
+      border-top: 1px solid var(--ink);
+      display: grid;
+      grid-template-columns: 116px 1fr;
+    }
+    .pilot-spec dt,
+    .pilot-spec dd {
+      padding: 15px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .pilot-spec dt { padding-right: 20px; color: var(--muted); }
+    .pilot-spec dd { margin: 0; font-weight: 500; }
+
+    .cta {
+      color: white;
+      background: var(--ink);
+      text-align: center;
+    }
+    .cta h2 { max-width: 16ch; margin-inline: auto; }
+    .cta p { max-width: 58ch; margin: 22px auto 32px; color: rgba(255,255,255,.72); }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 48px;
+      padding: 0 22px;
+      color: white;
+      background: var(--accent);
+      border: 0;
+      border-radius: 999px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .button:hover { background: #de6136; }
+
+    footer { padding: 30px 0; border-top: 1px solid var(--rule); }
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a:hover { color: var(--ink); }
+
+    @media (max-width: 760px) {
+      .nav-links a:first-child { display: none; }
+      .hero-grid,
+      .section-head,
+      .method-grid,
+      .status-grid,
+      .negative .wrap,
+      .pivot { grid-template-columns: 1fr; }
+      .hero-grid { align-items: start; }
+      .proof-grid { grid-template-columns: 1fr; }
+      .proof-item,
+      .proof-item:first-child {
+        padding: 18px 0;
+        border-right: 0;
+        border-bottom: 1px solid rgba(255,255,255,.22);
+      }
+      .proof-item:last-child { border-bottom: 0; }
+      .benchmark-row { grid-template-columns: 82px minmax(0, 1fr); gap: 18px; }
+      .delta { grid-column: 2; text-align: left; }
+      .bar-line { grid-template-columns: 50px minmax(0, 1fr); }
+      .bar-line strong { grid-column: 2; text-align: left; }
+      .footer-inner { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html" aria-label="Applied Resonance home">
+        <svg viewBox="0 0 280 280" aria-hidden="true">
+          <circle cx="140" cy="140" r="100" fill="none" stroke="currentColor" stroke-width="15"/>
+          <path d="M40 140 90 98 140 140 190 182 240 140" fill="none" stroke="currentColor" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>APPLIED RESONANCE</span>
+      </a>
+      <div class="nav-links">
+        <a href="#method">Method</a>
+        <a href="mailto:connorklann@gmail.com">Contact</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="stamp">Evidence page &middot; updated July 21, 2026</p>
+        <h1>A machine-health engine, with receipts.</h1>
+        <p class="hero-copy">EarSight learns one machine&rsquo;s healthy sound and scores deviations. This page separates benchmarked work from the hardware and pilot claims that remain open.</p>
+      </div>
+      <div>
+        <svg class="signal" viewBox="0 0 520 190" role="img" aria-label="Healthy waveform transitioning into irregular anomaly impulses">
+          <path d="M0 95 C20 72 35 118 55 95 S90 72 110 95 145 118 165 95 200 72 220 95 255 118 275 95" fill="none" stroke="rgba(255,255,255,.52)" stroke-width="3"/>
+          <path d="M275 95 C292 82 304 105 318 95 L330 26 340 154 351 95 C366 78 379 113 393 95 L405 48 415 136 426 95 C441 75 455 116 468 95 L480 35 491 146 503 95 520 76" fill="none" stroke="#f07a4f" stroke-width="3"/>
+          <line x1="275" y1="16" x2="275" y2="174" stroke="rgba(255,255,255,.22)" stroke-dasharray="5 7"/>
+        </svg>
+        <div class="signal-labels"><span>healthy reference</span><span>deviation scored</span></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="proof-strip">
+    <div class="wrap proof-grid">
+      <div class="proof-item"><strong>9,755 clips</strong><span>full 0 dB fan and pump evaluation</span></div>
+      <div class="proof-item"><strong>Normal-only fit</strong><span>per-machine-ID anomaly scorers</span></div>
+      <div class="proof-item"><strong>3-decimal match</strong><span>determinism across two runs</span></div>
+    </div>
+  </div>
+
+  <main>
+    <section id="results">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Above the published baseline.</h2>
+          <p>AUC measures how cleanly the score separates held-out healthy clips from abnormal clips. Higher is better. Values below are type averages from the full fan/pump dataset.</p>
+        </div>
+        <div class="benchmark" aria-label="EarSight and DCASE 2020 baseline AUC comparison">
+          <div class="benchmark-row">
+            <div class="machine">Pump</div>
+            <div class="bar-stack">
+              <div class="bar-line"><span>EarSight</span><div class="track"><div class="fill" style="--score:88%"></div></div><strong>0.880</strong></div>
+              <div class="bar-line baseline"><span>DCASE</span><div class="track"><div class="fill" style="--score:72.9%"></div></div><strong>0.729</strong></div>
+            </div>
+            <div class="delta">+0.151</div>
+          </div>
+          <div class="benchmark-row">
+            <div class="machine">Fan</div>
+            <div class="bar-stack">
+              <div class="bar-line"><span>EarSight</span><div class="track"><div class="fill" style="--score:69.3%"></div></div><strong>0.693</strong></div>
+              <div class="bar-line baseline"><span>DCASE</span><div class="track"><div class="fill" style="--score:65.8%"></div></div><strong>0.658</strong></div>
+            </div>
+            <div class="delta">+0.035</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="method">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>How the result was produced.</h2>
+          <p>The comparison uses the published DCASE 2020 Task 2 development baseline for the same MIMII machine types. It is a benchmark result, not evidence of field deployment.</p>
+        </div>
+        <div class="method-grid">
+          <div>
+            <h3>Dataset and split</h3>
+            <ul class="method-list">
+              <li>MIMII 0 dB fan and pump data</li>
+              <li>5,893 normal training clips</li>
+              <li>3,862 held-out normal and abnormal test clips</li>
+              <li>Scorers fit on normal clips only, per machine ID</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Representation and scoring</h3>
+            <ul class="method-list">
+              <li>PANNs CNN14 16 kHz, 2,048-dimensional embeddings</li>
+              <li>Cosine k-nearest-neighbour primary scorer</li>
+              <li>Ledoit-Wolf Mahalanobis secondary scorer</li>
+              <li>Seed 1337; AUC and pAUC matched to three decimals across two runs</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <h2>What exists, and what does not.</h2>
+          <p>&ldquo;Implemented,&rdquo; &ldquo;verified,&rdquo; and &ldquo;deployed&rdquo; are different claims. EarSight uses those words literally.</p>
+        </div>
+        <div class="status-grid">
+          <div>
+            <h3>Verified or previously reproduced</h3>
+            <p class="subhead">Evidence exists in the project reports or target simulator.</p>
+            <ul class="status-list verified">
+              <li>Full benchmark and determinism check</li>
+              <li>Streaming inference and physics-based evidence layer</li>
+              <li>ONNX numerical parity with the PyTorch embedder</li>
+              <li>Authenticated FastAPI scoring path</li>
+              <li>Even Hub app in the official simulator</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Still open</h3>
+            <p class="subhead">These are plans or hardware gates, not traction.</p>
+            <ul class="status-list open">
+              <li>Physical G2 hardware verification</li>
+              <li>Accelerometer ingestion and fused scoring</li>
+              <li>Raspberry Pi pilot image verified on a Pi</li>
+              <li>SMS/email alerts, weekly report, and phone status page</li>
+              <li>Real pilot machines, users, revenue, or deployed gateway</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="negative">
+      <div class="wrap">
+        <h2>The null result ships too.</h2>
+        <div class="negative-copy">
+          <p>A separate fan/pump classifier reached <strong>1.000 training accuracy</strong> but only <strong>0.577 validation accuracy</strong> on a held-out machine-ID split.</p>
+          <p>The model learned hardware-specific spectral signatures that did not generalize. That does not invalidate the per-ID anomaly scorers above, but it is a real limitation and remains in the report rather than being edited away.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap pivot">
+        <div>
+          <h2>The glasses are the demo. The box is the pilot.</h2>
+          <p class="pivot-copy">EarSight began as a smart-glasses interface for field technicians. The interface remains useful for demonstrating live scoring, but the fall pilot is intentionally simpler: one hybrid sensor box per machine, alerts routed by phone, and a weekly report a shop owner can understand.</p>
+        </div>
+        <dl class="pilot-spec">
+          <dt>Target cost</dt><dd>$60 production box</dd>
+          <dt>First kits</dt><dd>About $80 each</dd>
+          <dt>Pilot mix</dt><dd>2 breweries + 1 contractor</dd>
+          <dt>Duration</dt><dd>60 days per machine</dd>
+          <dt>Privacy</dt><dd>Feature-only by default</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="wrap">
+        <h2>Three machines. Sixty days. An honest answer.</h2>
+        <p>EarSight is looking for Vancouver pilot hosts and HVAC or refrigeration contractors willing to test whether low-cost monitoring is useful in practice.</p>
+        <a class="button" href="mailto:connorklann@gmail.com?subject=EarSight%20pilot">Contact Connor</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <span>&copy; 2026 Connor Klann &middot; Applied Resonance</span>
+      <div class="footer-links">
+        <a href="https://connork.com">Portfolio</a>
+        <a href="https://codesprint.ca">CodeSprint</a>
+        <a href="index.html">Project home</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
