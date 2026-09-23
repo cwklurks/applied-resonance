@@ -12,3 +12,8 @@ export function isLoopbackEngineOrigin(origin: string): boolean {
     return false
   }
 }
+
+/** Token-free origins used only by local development and the opt-in G2 proxy. */
+export function isLocalEngineOrigin(origin: string): boolean {
+  return origin.startsWith('/') || isLoopbackEngineOrigin(origin)
+}

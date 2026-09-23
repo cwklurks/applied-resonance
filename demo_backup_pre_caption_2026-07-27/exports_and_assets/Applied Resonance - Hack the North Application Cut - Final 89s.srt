@@ -1,0 +1,98 @@
+1
+00:00:00,000 --> 00:00:03,350
+Hi there, my name is Connor,
+
+2
+00:00:03,350 --> 00:00:06,250
+and this is my demo for Applied Resonance,
+
+3
+00:00:06,250 --> 00:00:10,760
+which turns smart glasses into
+an early warning system for machines.
+
+4
+00:00:10,760 --> 00:00:15,640
+Before you can notice that a machine sounds wrong,
+you have to learn what normal sounds like.
+
+5
+00:00:15,640 --> 00:00:18,600
+Here, the real G2 glasses microphone
+that I am wearing
+
+6
+00:00:18,600 --> 00:00:22,440
+listens to a normal pump for 30 seconds
+and builds a baseline.
+
+7
+00:00:22,440 --> 00:00:27,160
+When playback changes to an abnormal recording
+from the same pump at the same volume,
+
+8
+00:00:27,160 --> 00:00:30,880
+the change persists, and an alert
+appears on the glasses.
+
+9
+00:00:30,880 --> 00:00:34,960
+That is where you see me tap the temple once,
+which saves the previous 10 seconds
+
+10
+00:00:34,960 --> 00:00:36,280
+as evidence.
+
+11
+00:00:36,280 --> 00:00:40,120
+When the normal sound returns, however,
+it goes back to listening.
+
+12
+00:00:40,120 --> 00:00:45,400
+That recovery is important because it shows
+Applied Resonance can constantly update,
+
+13
+00:00:45,400 --> 00:00:47,720
+no matter what is going on.
+
+14
+00:00:47,720 --> 00:00:54,400
+I tested it on 9,755 industrial recordings
+from DCASE, a standard research benchmark
+
+15
+00:00:54,400 --> 00:00:57,000
+for unusual machine sounds.
+
+16
+00:00:57,000 --> 00:01:03,900
+It reached an AUC of 0.693 on fans
+and 0.880 on pumps,
+
+17
+00:01:03,900 --> 00:01:10,640
+above the published DCASE 2020
+reference baselines.
+
+18
+00:01:10,640 --> 00:01:15,560
+Six months ago, I had never built anything
+related to wearable hardware.
+
+19
+00:01:15,560 --> 00:01:21,880
+Now, however, I have a working loop from glasses
+to phone, to model, and back to the display.
+
+20
+00:01:21,880 --> 00:01:23,680
+That is what I am proudest of.
+
+21
+00:01:23,680 --> 00:01:28,000
+I followed one question from my boxing gym
+all the way to a real prototype.

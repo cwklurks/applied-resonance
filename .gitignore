@@ -10,13 +10,30 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .DS_Store
+
+# Local browser and test-runner state.
+.playwright-mcp/
 datakit/data/*
 !datakit/data/.gitkeep
 
+# JavaScript build and dependency artifacts.
 node_modules/
+datakit/dist/
+datakit/test-results/
 apps/evenhub/dist/
 apps/evenhub/app.generated.json
 shared/display-card/dist/
 *.ehpk
+
+# Local runtime output and credentials.
 killtest_out/
+tmp/
 .env.local
+
+# Large demo video exports (keep overlays, captions and stills; copy video manually)
+demo_assets/**/*.mp4
+demo_assets/**/*.mov
+demo_assets/*.mp4
+demo_assets/*.mov
+demo_backup_pre_caption_2026-07-27/**/*.mp4
+demo_backup_pre_caption_2026-07-27/**/*.mov

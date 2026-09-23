@@ -24,7 +24,7 @@ def test_parse_args_overrides():
     assert args.budget_s == 120.0
 
 
-GOOD_REPORT = """# EarSight Baseline Report
+GOOD_REPORT = """# Applied Resonance Baseline Report
 ## Anomaly detection — AUC / pAUC (p=0.1)
 | **fan** | **type average** | | | **0.749** |
 ## Determinism

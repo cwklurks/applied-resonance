@@ -45,12 +45,12 @@ describe("formatHudCard — exact strings per state", () => {
         evidenceLine: "impulse train ~88 Hz",
       }),
     ).toEqual({
-      line1: "? Possible anomaly · 75%",
+      line1: "? Possible anomaly · percentile 75",
       line2: "impulse train ~88 Hz · tap to log",
     });
   });
 
-  it("ALERT matches the product brief example exactly", () => {
+  it("ALERT describes a strong change without implying a diagnosis", () => {
     expect(
       formatHudCard({
         state: "ALERT",
@@ -58,7 +58,7 @@ describe("formatHudCard — exact strings per state", () => {
         evidenceLine: "impulse train ~88 Hz",
       }),
     ).toEqual({
-      line1: "! Bearing-like anomaly · 81%",
+      line1: "! Strong acoustic change · percentile 81",
       line2: "impulse train ~88 Hz · tap to log",
     });
   });
@@ -67,7 +67,7 @@ describe("formatHudCard — exact strings per state", () => {
     expect(
       formatHudCard({ state: "ALERT", percentile: 81 }),
     ).toEqual({
-      line1: "! Bearing-like anomaly · 81%",
+      line1: "! Strong acoustic change · percentile 81",
       line2: "tap to log",
     });
   });
@@ -96,13 +96,13 @@ describe("formatHudCard — exact strings per state", () => {
 describe("formatHudCard — percentile edge cases", () => {
   it("rounds percentile", () => {
     expect(formatHudCard({ state: "ALERT", percentile: 80.5 }).line1).toBe(
-      "! Bearing-like anomaly · 81%",
+      "! Strong acoustic change · percentile 81",
     );
   });
 
   it("omits the · N% suffix when percentile is NaN", () => {
     expect(formatHudCard({ state: "ALERT", percentile: NaN }).line1).toBe(
-      "! Bearing-like anomaly",
+      "! Strong acoustic change",
     );
   });
 
@@ -112,14 +112,14 @@ describe("formatHudCard — percentile edge cases", () => {
 
   it("omits the · N% suffix when percentile is null", () => {
     expect(formatHudCard({ state: "ALERT", percentile: null }).line1).toBe(
-      "! Bearing-like anomaly",
+      "! Strong acoustic change",
     );
   });
 
   it("omits the · N% suffix when percentile is Infinity", () => {
     expect(
       formatHudCard({ state: "ALERT", percentile: Infinity }).line1,
-    ).toBe("! Bearing-like anomaly");
+    ).toBe("! Strong acoustic change");
   });
 });
 

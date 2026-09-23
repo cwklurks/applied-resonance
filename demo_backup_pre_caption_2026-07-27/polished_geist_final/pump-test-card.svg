@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect width="1920" height="1080" fill="#070A10"/>
+
+  <text x="96" y="126" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500" letter-spacing="3.5">APPLIED RESONANCE</text>
+  <text x="96" y="244" fill="#F7F8FA" font-family="Geist, Arial, sans-serif" font-size="80" font-weight="700">Controlled pump test</text>
+  <text x="96" y="306" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="30" font-weight="400">Can smart glasses learn normal, catch a persistent change, and recover?</text>
+
+  <g transform="translate(96 414)">
+    <rect width="520" height="376" rx="16" fill="#101722" stroke="#283242" stroke-width="2"/>
+    <circle cx="78" cy="78" r="36" fill="#39FF55"/>
+    <text x="78" y="90" text-anchor="middle" fill="#071009" font-family="Geist, Arial, sans-serif" font-size="36" font-weight="700">1</text>
+    <text x="42" y="172" fill="#F7F8FA" font-family="Geist, Arial, sans-serif" font-size="42" font-weight="700">Learn normal</text>
+    <text x="42" y="230" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">30 seconds of normal</text>
+    <text x="42" y="270" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">pump audio builds a</text>
+    <text x="42" y="310" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">fresh baseline.</text>
+  </g>
+
+  <g transform="translate(700 414)">
+    <rect width="520" height="376" rx="16" fill="#101722" stroke="#283242" stroke-width="2"/>
+    <circle cx="78" cy="78" r="36" fill="#39FF55"/>
+    <text x="78" y="90" text-anchor="middle" fill="#071009" font-family="Geist, Arial, sans-serif" font-size="36" font-weight="700">2</text>
+    <text x="42" y="172" fill="#F7F8FA" font-family="Geist, Arial, sans-serif" font-size="42" font-weight="700">Change the sound</text>
+    <text x="42" y="230" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">Switch to an abnormal</text>
+    <text x="42" y="270" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">recording from the same</text>
+    <text x="42" y="310" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">pump at the same volume.</text>
+  </g>
+
+  <g transform="translate(1304 414)">
+    <rect width="520" height="376" rx="16" fill="#101722" stroke="#283242" stroke-width="2"/>
+    <circle cx="78" cy="78" r="36" fill="#39FF55"/>
+    <text x="78" y="90" text-anchor="middle" fill="#071009" font-family="Geist, Arial, sans-serif" font-size="36" font-weight="700">3</text>
+    <text x="42" y="172" fill="#F7F8FA" font-family="Geist, Arial, sans-serif" font-size="42" font-weight="700">Verify the loop</text>
+    <text x="42" y="230" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">Alert on the G2, tap once</text>
+    <text x="42" y="270" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">to save evidence, then</text>
+    <text x="42" y="310" fill="#A8B0BC" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="400">return to LISTENING.</text>
+  </g>
+
+  <line x1="96" y1="900" x2="1824" y2="900" stroke="#273142" stroke-width="2"/>
+  <text x="96" y="966" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500">Real G2 microphone</text>
+  <text x="960" y="966" text-anchor="middle" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500">Live phone HUD mirror</text>
+  <text x="1824" y="966" text-anchor="end" fill="#8D96A5" font-family="Geist, Arial, sans-serif" font-size="24" font-weight="500">Controlled playback</text>
+</svg>

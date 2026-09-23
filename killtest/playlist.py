@@ -23,6 +23,9 @@ import numpy as np
 import soundfile as sf
 
 from engine.audio import load_wav
+from engine.dataset import Clip
+from engine.eval.splits import make_anomaly_splits
+from killtest.ids import IdKey, format_id_key, parse_id_tokens
 
 logger = logging.getLogger("killtest.playlist")
 
@@ -127,6 +130,8 @@ def make_playlist(
         "chirp_s": float(chirp_s),
         "silence_s": float(silence_s),
         "normalization_gain": float(gain),
+        "total_samples": int(len(playlist)),
+        "duration_s": float(len(playlist) / sr),
         "entries": entries,
     }
     out_manifest.write_text(json.dumps(manifest, indent=2))
@@ -170,6 +175,35 @@ def select_clips(
     return chosen
 
 
+def select_split_test_clips(
+    clips: Sequence[Clip],
+    ids: Sequence[IdKey],
+    seed: int = 1337,
+) -> list[Path]:
+    """Select every split test clip for the requested machine ids.
+
+    Splits are built from the full clip list first, then filtered, so the split
+    seed behavior and per-id RNG offsets remain identical to the baseline eval.
+    """
+    if not ids:
+        raise ValueError("--from-split requires --ids, e.g. --ids fan:id_06")
+
+    wanted = set(ids)
+    splits = make_anomaly_splits(clips, seed=seed)
+    found = {(split.machine, split.machine_id) for split in splits}
+    missing = [format_id_key(key) for key in ids if key not in found]
+    if missing:
+        raise ValueError(f"requested ids not present in split set: {missing}")
+
+    selected: list[Path] = []
+    for split in splits:
+        if (split.machine, split.machine_id) not in wanted:
+            continue
+        selected.extend(clip.path for clip in split.test_normal)
+        selected.extend(clip.path for clip in split.test_abnormal)
+    return selected
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a re-record playback playlist.")
     parser.add_argument("--snr", type=str, default="0_dB")
@@ -181,6 +215,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["abnormal", "normal", "both"],
         default="both",
     )
+    parser.add_argument(
+        "--from-split",
+        action="store_true",
+        help="select test_normal + test_abnormal from the anomaly eval split",
+    )
+    parser.add_argument(
+        "--ids",
+        type=str,
+        nargs="+",
+        default=None,
+        help='machine ids for --from-split, e.g. --ids fan:id_06 pump:id_02',
+    )
     parser.add_argument("--out-dir", type=str, default="killtest_out")
     parser.add_argument("--silence-s", type=float, default=2.0)
     parser.add_argument("--chirp-s", type=float, default=2.0)
@@ -190,24 +236,38 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = _parse_args(argv)
-    clip_paths = select_clips(
-        snr=args.snr,
-        machines=args.machines,
-        per_id=args.per_id,
-        label=args.label,
-    )
+    if args.from_split:
+        from engine.dataset import list_clips
+
+        ids = parse_id_tokens(args.ids, option_name="--ids")
+        clip_paths = select_split_test_clips(
+            clips=list_clips(snr=args.snr),
+            ids=ids,
+            seed=1337,
+        )
+    else:
+        clip_paths = select_clips(
+            snr=args.snr,
+            machines=args.machines,
+            per_id=args.per_id,
+            label=args.label,
+        )
     if not clip_paths:
         raise ValueError(
             f"no clips selected for snr={args.snr} machines={args.machines} "
             f"label={args.label}"
         )
     out_dir = Path(args.out_dir)
-    make_playlist(
+    manifest = make_playlist(
         clip_paths=clip_paths,
         out_wav=out_dir / "playlist.wav",
         out_manifest=out_dir / "playlist_manifest.json",
         silence_s=args.silence_s,
         chirp_s=args.chirp_s,
+    )
+    print(
+        "total playback duration: "
+        f"{manifest['duration_s']:.1f}s ({len(manifest['entries'])} clips)"
     )
 
 

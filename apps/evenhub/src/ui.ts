@@ -81,7 +81,7 @@ export function mountUi(): void {
   app.innerHTML = `
     <main class="panel">
       <header>
-        <h1>EarSight</h1>
+        <h1>Applied Resonance</h1>
         <div id="badge" class="badge">idle</div>
       </header>
 
