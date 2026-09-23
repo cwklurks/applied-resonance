@@ -1,4 +1,4 @@
-"""EarSight desktop demo -- live acoustic-anomaly monitor + data collector.
+"""Applied Resonance desktop demo -- live acoustic-anomaly monitor + data collector.
 
 Run with::
 
@@ -231,7 +231,7 @@ def _saved_tags() -> list[str]:
 
 def _render_sidebar() -> dict:
     ss = st.session_state
-    st.sidebar.title("EarSight setup")
+    st.sidebar.title("Applied Resonance setup")
 
     devices = _device_options()
     device_labels = [f"{d['index']}: {d['name']}" for d in devices]
@@ -446,10 +446,10 @@ def _live_fragment(cfg: dict) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="EarSight monitor", page_icon="🎧", layout="wide")
+    st.set_page_config(page_title="Applied Resonance monitor", page_icon="🎧", layout="wide")
     _init_state()
 
-    st.title("🎧 EarSight -- live acoustic-anomaly monitor")
+    st.title("🎧 Applied Resonance -- live acoustic-anomaly monitor")
     st.caption(
         "Point the mic at a machine, capture a 30 s healthy baseline, then watch "
         "the anomaly meter. On SUSPECT/ALERT the evidence line explains why."

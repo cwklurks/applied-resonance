@@ -12,8 +12,10 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from engine.dataset import Clip
+from engine.eval.splits import make_anomaly_splits
 from killtest.noise import mix_at_snr, overlay_tree, stable_hash
-from killtest.playlist import make_chirp, make_playlist
+from killtest.playlist import make_chirp, make_playlist, select_split_test_clips
 from killtest.segment import find_offset, segment_recording
 
 SR = 16000
@@ -77,6 +79,38 @@ def test_make_playlist_length_and_alignment(tmp_path):
 def test_make_playlist_rejects_empty(tmp_path):
     with pytest.raises(ValueError):
         make_playlist([], tmp_path / "a.wav", tmp_path / "m.json")
+
+
+def _build_split_tree(root: Path) -> list[Clip]:
+    clips: list[Clip] = []
+    seed = 0
+    for machine in ("fan", "pump"):
+        for machine_id in ("id_00", "id_02", "id_06"):
+            for label, n in (("normal", 5), ("abnormal", 2)):
+                for i in range(n):
+                    seed += 1
+                    path = (
+                        root / "0_dB" / machine / machine_id / label / f"{i:08d}.wav"
+                    )
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    _write_burst(path, seed=seed, n=SR // 10)
+                    clips.append(Clip(path, machine, machine_id, label))
+    return clips
+
+
+def test_select_split_test_clips_from_split_exact_ids(tmp_path):
+    clips = _build_split_tree(tmp_path / "mimii")
+    ids = (("fan", "id_06"), ("pump", "id_02"))
+
+    selected = select_split_test_clips(clips, ids=ids, seed=1337)
+
+    expected: list[Path] = []
+    for split in make_anomaly_splits(clips, seed=1337):
+        if (split.machine, split.machine_id) in set(ids):
+            expected.extend(clip.path for clip in split.test_normal)
+            expected.extend(clip.path for clip in split.test_abnormal)
+
+    assert selected == expected
 
 
 # --------------------------------------------------------------------------- #

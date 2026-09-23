@@ -148,7 +148,7 @@ def render_report(
 ) -> str:
     """Render the full REPORT_BASELINE.md markdown as a string."""
     lines: list[str] = []
-    lines.append("# EarSight Baseline Report — MIMII 0 dB (fan, pump)")
+    lines.append("# Applied Resonance Baseline Report — MIMII 0 dB (fan, pump)")
     total_train = sum(r.n_train for r in results)
     total_test = sum(r.n_test_normal + r.n_test_abnormal for r in results)
     lines.append(
@@ -404,7 +404,7 @@ def _print_summary(
     timings: tuple[float, float, float, float],
 ) -> None:
     t_embed, t_score, t_clf, t_total = timings
-    print("\n=== EarSight anomaly eval summary ===")
+    print("\n=== Applied Resonance anomaly eval summary ===")
     for machine in sorted(averages):
         knn = averages[machine]["knn"]
         mah = averages[machine]["mahalanobis"]

@@ -114,6 +114,8 @@ Run the Python test suite:
 uv run pytest
 ```
 
+For detailed setup, the scoring-service API, the field recorder, and the re-record kit, see [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
 ## Repository map
 
 ```text

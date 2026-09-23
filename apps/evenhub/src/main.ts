@@ -1,5 +1,5 @@
 /**
- * EarSight Even Hub shell: a thin bridge wrapper around the bridge-agnostic
+ * Applied Resonance Even Hub shell: a thin bridge wrapper around the bridge-agnostic
  * Pipeline. It owns only the lens lifecycle (container create, mic, taps,
  * exit/cleanup) and delegates all audio→engine→HUD logic to Pipeline.
  *
@@ -21,7 +21,7 @@ import { EngineClient, formatHudCard } from '@earsight/display-card'
 import { Pipeline } from './pipeline'
 import { BridgeAudioFeed, BridgeDisplay, HUD_CONTAINER_ID } from './bridge_adapters'
 import { runMockFromWav } from './mock'
-import { ENGINE_ORIGIN, isLoopbackEngineOrigin } from './config'
+import { ENGINE_ORIGIN, isLocalEngineOrigin } from './config'
 import {
   bindCaptureControls,
   mountUi,
@@ -67,7 +67,7 @@ async function boot(): Promise<void> {
 }
 
 function readRuntimeBearerToken(engineOrigin: string): Promise<string | undefined> {
-  if (isLoopbackEngineOrigin(engineOrigin)) return Promise.resolve(undefined)
+  if (isLocalEngineOrigin(engineOrigin)) return Promise.resolve(undefined)
 
   return new Promise((resolve) => {
     const overlay = document.createElement('div')
@@ -155,7 +155,7 @@ async function runBridgeMode(client: EngineClient): Promise<void> {
     paddingLength: 4,
     containerID: HUD_CONTAINER_ID,
     containerName: 'hud',
-    content: 'EarSight starting...',
+    content: 'Applied Resonance starting...',
     isEventCapture: 1,
   })
 
@@ -276,7 +276,9 @@ async function runBridgeMode(client: EngineClient): Promise<void> {
   window.addEventListener('beforeunload', cleanup)
 
   try {
+    pushLog('pipeline: starting session')
     await pipeline.start()
+    pushLog('pipeline: session started')
   } catch (err) {
     const offline = formatHudCard({ state: 'OFFLINE' })
     display.render(offline)

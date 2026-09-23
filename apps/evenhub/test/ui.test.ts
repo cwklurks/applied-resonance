@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isLoopbackEngineOrigin } from '../src/config'
+import { isLocalEngineOrigin, isLoopbackEngineOrigin } from '../src/config'
 
 describe('engine origin classification', () => {
   it('recognizes only HTTP loopback origins as token-free development', () => {
@@ -12,5 +12,12 @@ describe('engine origin classification', () => {
     expect(isLoopbackEngineOrigin('https://engine.example.test')).toBe(false)
     expect(isLoopbackEngineOrigin('http://192.0.2.10:8000')).toBe(false)
     expect(isLoopbackEngineOrigin('not a URL')).toBe(false)
+  })
+
+  it('treats only the same-origin development proxy as token-free', () => {
+    expect(isLocalEngineOrigin('/engine')).toBe(true)
+    expect(isLocalEngineOrigin('http://localhost:8000')).toBe(true)
+    expect(isLocalEngineOrigin('http://192.0.2.10:8000')).toBe(false)
+    expect(isLocalEngineOrigin('https://engine.example.test')).toBe(false)
   })
 })

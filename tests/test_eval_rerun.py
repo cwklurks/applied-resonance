@@ -180,6 +180,44 @@ def test_partial_substitution(fake_mimii, tmp_path):
     assert sorted(p.resolve() for p in fresh_calls) == sorted(sub_paths)
 
 
+def test_restrict_ids_requires_complete_test_coverage(fake_mimii, tmp_path):
+    root, clips = fake_mimii
+    embed_clean, embed_fresh, _ = _make_embedders()
+
+    from engine.eval.splits import make_anomaly_splits
+
+    target = (MACHINE, IDS[0])
+    split = next(
+        s for s in make_anomaly_splits(clips, seed=1337)
+        if (s.machine, s.machine_id) == target
+    )
+    test_clips = [*split.test_normal, *split.test_abnormal]
+    missing_clip = test_clips[-1]
+    missing_rel = missing_clip.path.resolve().relative_to(root.resolve())
+
+    clip_root = tmp_path / "subtree"
+    for clip in test_clips[:-1]:
+        rel = clip.path.resolve().relative_to(root.resolve())
+        dest = clip_root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(clip.path, dest)
+
+    with pytest.raises(ValueError) as excinfo:
+        er.rerun_eval(
+            clips,
+            clip_root,
+            restrict_ids=[target],
+            embed_clean=embed_clean,
+            embed_fresh=embed_fresh,
+            mimii_root=root,
+        )
+
+    message = str(excinfo.value)
+    assert "restricted clip_root coverage is incomplete" in message
+    assert f"{MACHINE}:{IDS[0]}" in message
+    assert missing_rel.as_posix() in message
+
+
 def test_train_embeddings_never_fresh(fake_mimii, tmp_path):
     """Substitute every test clip; embed_fresh must still never see a train clip."""
     root, clips = fake_mimii
@@ -270,7 +308,7 @@ def test_report_table(fake_mimii):
     er.write_report(data)
 
     report = er.REPORT_PATH.read_text()
-    assert "| condition | n_replaced | fan kNN AUC |" in report
+    assert "| condition | n_replaced | coverage | fan kNN AUC |" in report
     # One body row per condition, clean first.
     body = [ln for ln in report.splitlines() if ln.startswith("| ")]
     # header + separator + 2 condition rows = 4 table lines starting with "| ".
