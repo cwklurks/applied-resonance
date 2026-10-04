@@ -37,3 +37,7 @@ demo_assets/*.mp4
 demo_assets/*.mov
 demo_backup_pre_caption_2026-07-27/**/*.mp4
 demo_backup_pre_caption_2026-07-27/**/*.mov
+
+# Private notes, plans and generated application files (never published).
+_private/
+output/

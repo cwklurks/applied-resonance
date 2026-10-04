@@ -2,9 +2,8 @@
 
 Last updated: 2026-07-21
 
-This status records the verified evidence and open gates from
-[`EARSIGHT_CONTEXT.md`](EARSIGHT_CONTEXT.md) §2. “Implemented,” “verified,” and
-“deployed” are distinct readiness levels.
+This status records the verified evidence and open gates. “Implemented,”
+“verified,” and “deployed” are distinct readiness levels.
 
 ## Verified evidence
 

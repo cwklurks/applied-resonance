@@ -14,8 +14,7 @@ The project deliberately separates readiness levels:
 - **Verified:** independently checked against the target environment or published protocol.
 - **Deployed:** running for a real pilot host.
 
-Current evidence and open gates are summarized in [`STATUS.md`](../STATUS.md). Project
-ground truth is [`EARSIGHT_CONTEXT.md`](../EARSIGHT_CONTEXT.md).
+Current evidence and open gates are summarized in [`STATUS.md`](../STATUS.md).
 
 ## Acoustic engine foundation
 
