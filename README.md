@@ -137,6 +137,18 @@ not a probability of machine failure. The companion interface mirrors the HUD
 state but is not an optical capture of the lens. Current inference is hosted on
 the laptop, not fully on the glasses.
 
+## About this repository
+
+This is the public record of the Applied Resonance prototype as of October
+2026: the benchmarked engine, the G2 app and the hardware demo. New development
+happens in a private repository, so this one changes only when something is
+ready to show. What is verified and what is still open is tracked in
+[STATUS.md](STATUS.md).
+
+Copyright © 2026 Connor Klann. All rights reserved. You are welcome to read the
+code and reproduce the benchmark. Please ask before reusing it; see
+[LICENSE](LICENSE).
+
 ## Built by
 
 [Connor Klann](https://www.connork.com) ·

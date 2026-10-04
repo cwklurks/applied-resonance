@@ -1,0 +1,39 @@
+#!/bin/sh
+# Public-repo guard. Stops private notes and personal email addresses from
+# being committed to the public Applied Resonance repository.
+# Turn it on once per checkout:  git config core.hooksPath .githooks
+
+origin=$(git remote get-url origin 2>/dev/null)
+case "$origin" in
+  *cwklurks/applied-resonance.git|*cwklurks/applied-resonance) ;;
+  *) exit 0 ;;  # Not the public repo (for example the private lab): do nothing.
+esac
+
+fail=0
+
+email=$(git config user.email)
+case "$email" in
+  *@users.noreply.github.com) ;;
+  *)
+    echo "Blocked: commit with your GitHub noreply email here (currently: ${email:-unset})."
+    fail=1
+    ;;
+esac
+
+blocked=$(git diff --cached --name-only --diff-filter=ACMR |
+  grep -E '^(_private|notes|output)/|(^|/)(THE_PLAN|EARSIGHT_CONTEXT|AGENT_PROMPTS|HACK_THE_NORTH)\.md$' || true)
+if [ -n "$blocked" ]; then
+  echo "Blocked: these files belong in the private lab repo:"
+  echo "$blocked"
+  fail=1
+fi
+
+if git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+' | grep -q -i 'amazingcwk2@'; then
+  echo "Blocked: a staged change contains a personal email address."
+  fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "Commit stopped by .githooks/pre-commit."
+  exit 1
+fi

@@ -1,46 +1,49 @@
-# EarSight status
+# Applied Resonance status
 
-Last updated: 2026-07-21
+Last updated: 2026-10-04
 
-This status records the verified evidence and open gates. “Implemented,”
-“verified,” and “deployed” are distinct readiness levels.
+What is verified, and what is still open. “Implemented,” “verified,” and
+“deployed” are distinct readiness levels; see
+[docs/OPERATIONS.md](docs/OPERATIONS.md) for the definitions.
 
-## Verified evidence
+## Verified
 
-- On the full 9,755-clip MIMII 0 dB dataset, the engine’s fan cosine-kNN AUC is
-  **0.693** and pump cosine-kNN AUC is **0.880**. The DCASE2020 baselines are
-  **0.658** and **0.729**, respectively; determinism is enforced to three
-  decimals. See `engine/REPORT_FULL.md`.
-- The implemented pipeline uses log-mel + PANNs CNN14, cosine-kNN as the primary
-  scorer, Ledoit-Wolf Mahalanobis as secondary, and machine-ID-disjoint splits.
-- Streaming inference includes an ONNX numerical-parity check and a physics-based
-  evidence layer using Hilbert-envelope peak-picking for mains hum, shaft
-  rotation, and bearing impulses.
-- The FastAPI serve path has fail-closed bearer authentication, exact CORS, and
-  queue bounds. Model warmup was moved to startup; recorded readiness was about
-  3.03 s with a 734.5 ms baseline transition.
-- The Even Realities G2 EvenHub app was verified in the official simulator and
-  a valid `.ehpk` was built.
-- Honest negative: the fan/pump classifier reached **0.577** validation accuracy
-  on machine-ID-disjoint validation. The generalization gap is structural and is
-  documented rather than hidden.
+- **Benchmark.** On the full 9,755-clip MIMII 0 dB dataset, the engine’s fan
+  cosine-kNN AUC is **0.693** and pump cosine-kNN AUC is **0.880**. The
+  DCASE2020 baselines are **0.658** and **0.729**. Determinism is enforced to
+  three decimals. See [`engine/REPORT_FULL.md`](engine/REPORT_FULL.md).
+- **Pipeline.** Log-mel + PANNs CNN14 embeddings, cosine-kNN as the primary
+  scorer, Ledoit-Wolf Mahalanobis as secondary, machine-ID-disjoint splits.
+- **Streaming.** ONNX numerical-parity check, and an evidence layer that uses
+  Hilbert-envelope peak-picking for mains hum, shaft rotation and bearing
+  impulses.
+- **Service.** The FastAPI scoring service has fail-closed bearer
+  authentication, exact CORS and queue bounds. Model warmup runs at startup;
+  recorded readiness was about 3.03 s, with a 734.5 ms baseline transition.
+- **G2 app in the simulator.** The Even Hub app was verified in the official
+  simulator and builds a valid `.ehpk` package.
+- **Full loop on physical G2 glasses (controlled playback).** The real G2
+  microphone captured a 30-second healthy pump baseline. Playback then switched
+  to an abnormal recording from the same pump ID at the same volume, and the
+  persistent change raised an alert on the lens. One temple tap saved the
+  previous 10 seconds as evidence, and the state returned to `LISTENING` when
+  normal sound came back. Scoring ran on a laptop. Recorded in the
+  [89-second demo](https://www.connork.com/applied-resonance).
+- **Honest negative.** A separate fan/pump classifier reached **0.577**
+  validation accuracy on machine-ID-disjoint validation. The generalization gap
+  is structural, so the classifier was removed from the live runtime.
 
-## Open hardware and deployment gates
+## Open
 
-- No physical G2 hardware test.
-- No deployed HTTPS gateway.
-- No store listing live.
-- No re-record kill test on hardware.
-- No accelerometer path yet.
-- Zero real users, pilots installed, and revenue.
-
-## Wave 1 checklist
-
-- [ ] P0 Repo hygiene + STATUS.md
-- [ ] P1 VibrationSource + fused mic/accel scoring
-- [ ] P2 Pi pilot image (one-command headless install)
-- [ ] P3 Alerts + weekly report generator
-- [ ] P4 Phone status page (token auth, no glasses)
-- [ ] P5 Noise-robustness eval harness (published DCASE 2026 benchmark; conditional 2027 entry)
-- [ ] P6 Datakit consent/feature-only hardening
-- [ ] P7 Integration + verification (Connor personally)
+- **Detailed G2 hardware checks.** The 60-second byte-cadence check, 1 kHz tone
+  check, 10-minute locked-phone capture and 30-minute battery measurement have
+  not been run. See step 6 of the verification ladder in
+  [`apps/evenhub/README.md`](apps/evenhub/README.md).
+- **Re-record kill test through the G2 microphone.** Not run yet. The current
+  kill-test numbers use synthetic noise overlays only
+  ([`killtest/REPORT.md`](killtest/REPORT.md)).
+- **Deployment.** No deployed HTTPS gateway. Inference runs on a laptop, not on
+  the glasses or phone.
+- **Distribution.** No Even Hub store listing yet.
+- **Field use.** No field pilots yet. All results above come from public data
+  or controlled playback.
